@@ -46,3 +46,8 @@ http://localhost:7474/browser/
 with
 neo4j/password
 
+### use this to visualize 
+
+    cargo run --bin tron_graph_api
+    curl -X POST "http://localhost:3000/tron/wallet/<TRON_WALLET_ADDRESS>/neo4j/import?depth=3&limit=500"
+
