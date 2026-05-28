@@ -34,3 +34,15 @@ use btc_db;
 show tables;
 select * from wallet_info;
 ```
+
+### Docker Neo4j section
+
+    docker compose up -d clickhouse neo4j
+    cargo run
+    cargo run --bin tron_export_wallet_graph -- TEPSrSYPDSQ7yXpMFPq91Fb1QEWpMkRGfn 5 500
+
+And then we are going to see this
+http://localhost:7474/browser/
+with
+neo4j/password
+
