@@ -16,6 +16,13 @@ struct ExchangeMetadata {
     confidence: f32,
 }
 
+#[derive(Debug, Clone)]
+struct EntityMetadata {
+    entity_name: String,
+    entity_type: String,
+    confidence: f32,
+}
+
 #[derive(Debug, Clone, Deserialize, clickhouse::Row)]
 struct RelationshipReadRow {
     relationship_id: String,
@@ -28,6 +35,9 @@ struct RelationshipReadRow {
     amount_string: String,
     transfer_type: String,
     protocol: String,
+    exchange_flow_type: String,
+    exchange_name: String,
+    exchange_confidence: f32,
     risk_score: u8,
 }
 
@@ -38,6 +48,13 @@ struct ExchangeMetadataRow {
     confidence: f32,
     #[serde(rename = "last_seen_block")]
     _last_seen_block: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, clickhouse::Row)]
+struct EntityMetadataRow {
+    entity_name: String,
+    entity_type: String,
+    confidence: f32,
 }
 
 pub async fn build_wallet_flow_graph(
@@ -63,33 +80,32 @@ pub async fn build_wallet_flow_graph(
     }
     node_ids.insert(address.to_string());
 
-    let mut metadata = HashMap::<String, ExchangeMetadata>::new();
+    let mut exchange_metadata = HashMap::<String, ExchangeMetadata>::new();
+    let mut entity_metadata = HashMap::<String, EntityMetadata>::new();
     for node_id in &node_ids {
         if let Some(exchange) = load_exchange_metadata(&clickhouse, node_id).await? {
-            metadata.insert(node_id.clone(), exchange);
+            exchange_metadata.insert(node_id.clone(), exchange);
+        } else if let Some(entity) = load_entity_metadata(&clickhouse, node_id).await? {
+            entity_metadata.insert(node_id.clone(), entity);
         }
     }
 
     let mut nodes = Vec::<FlowNode>::new();
     for node_id in node_ids {
-        let exchange = metadata.get(&node_id);
-
-        let node = FlowNode {
-            id: node_id.clone(),
-            label: exchange
-                .map(|meta| format!("{} ({})", meta.exchange_name, meta.exchange_role))
-                .unwrap_or_else(|| short_address(&node_id)),
-            node_type: exchange
-                .map(|_| "exchange_wallet".to_string())
-                .unwrap_or_else(|| "wallet".to_string()),
-            exchange_name: exchange.map(|meta| meta.exchange_name.clone()),
-            exchange_role: exchange.map(|meta| meta.exchange_role.clone()),
-            confidence: exchange.map(|meta| meta.confidence),
-        };
+        let node = build_flow_node(
+            &node_id,
+            exchange_metadata.get(&node_id),
+            entity_metadata.get(&node_id),
+            &edges,
+        );
 
         upsert_wallet_with_metadata(
             neo4j,
             &node.id,
+            &node.label,
+            &node.node_type,
+            node.entity_name.as_deref(),
+            node.entity_type.as_deref(),
             node.exchange_name.as_deref(),
             node.exchange_role.as_deref(),
             node.confidence,
@@ -112,14 +128,19 @@ pub async fn build_wallet_flow_graph(
             edge.timestamp,
             edge.risk_score,
             &edge.transfer_type,
+            &edge.operation_type,
+            &edge.relationship_type,
             &edge.protocol,
+            edge.exchange_flow_type.as_deref(),
+            edge.exchange_name.as_deref(),
+            edge.exchange_confidence,
         )
         .await?;
     }
 
     let incoming_origins = incoming_origin_nodes(address, &nodes, &edges);
 
-    let exchange_interactions = exchange_summaries(address, &edges, &metadata);
+    let exchange_interactions = exchange_summaries(address, &edges, &exchange_metadata);
 
     for interaction in &exchange_interactions {
         merge_exchange_interaction(
@@ -206,20 +227,47 @@ async fn load_relationships_for_address(
         .query(
             r#"
             SELECT
-                relationship_id,
-                from_address,
-                to_address,
-                token_address,
-                tx_hash,
-                block_number,
-                toUInt64(timestamp) AS timestamp_unix,
-                toString(amount) AS amount_string,
-                transfer_type,
-                protocol,
-                risk_score
-            FROM address_relationships
-            WHERE from_address = ? OR to_address = ?
-            ORDER BY block_number DESC
+                ar.relationship_id,
+                ar.from_address,
+                ar.to_address,
+                ar.token_address,
+                ar.tx_hash,
+                ar.block_number,
+                toUInt64(ar.timestamp) AS timestamp_unix,
+                toString(ar.amount) AS amount_string,
+                ar.transfer_type,
+                ar.protocol,
+                ifNull(ef.exchange_flow_type, '') AS exchange_flow_type,
+                ifNull(ef.exchange_name, '') AS exchange_name,
+                ifNull(ef.exchange_confidence, toFloat32(0)) AS exchange_confidence,
+                ar.risk_score
+            FROM address_relationships AS ar
+            LEFT JOIN
+            (
+                SELECT
+                    tx_hash,
+                    from_address,
+                    to_address,
+                    token_address,
+                    amount,
+                    any(exchange_name) AS exchange_name,
+                    any(flow_type) AS exchange_flow_type,
+                    max(confidence) AS exchange_confidence
+                FROM exchange_flows
+                GROUP BY
+                    tx_hash,
+                    from_address,
+                    to_address,
+                    token_address,
+                    amount
+            ) AS ef
+                ON ar.tx_hash = ef.tx_hash
+                AND ar.from_address = ef.from_address
+                AND ar.to_address = ef.to_address
+                AND ar.token_address = ef.token_address
+                AND ar.amount = ef.amount
+            WHERE ar.from_address = ? OR ar.to_address = ?
+            ORDER BY ar.block_number DESC
             LIMIT ?
             "#,
         )
@@ -278,7 +326,47 @@ async fn load_exchange_metadata(
     }))
 }
 
+async fn load_entity_metadata(
+    clickhouse: &Client,
+    address: &str,
+) -> anyhow::Result<Option<EntityMetadata>> {
+    let row = clickhouse
+        .query(
+            r#"
+            SELECT
+                entity_name,
+                entity_type,
+                confidence
+            FROM address_entity
+            WHERE address = ?
+            ORDER BY confidence DESC, created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(address)
+        .fetch_optional::<EntityMetadataRow>()
+        .await?;
+
+    Ok(row.map(|row| EntityMetadata {
+        entity_name: row.entity_name,
+        entity_type: row.entity_type,
+        confidence: row.confidence,
+    }))
+}
+
 fn relationship_row_to_edge(row: RelationshipReadRow) -> FlowEdge {
+    let exchange_flow_type = non_empty_string(row.exchange_flow_type);
+    let exchange_name = non_empty_string(row.exchange_name);
+    let exchange_confidence = if row.exchange_confidence > 0.0 {
+        Some(row.exchange_confidence)
+    } else {
+        None
+    };
+    let operation_type = exchange_flow_type
+        .clone()
+        .unwrap_or_else(|| row.transfer_type.clone());
+    let relationship_type = neo4j_relationship_type(&operation_type, &row.transfer_type);
+
     FlowEdge {
         id: row.relationship_id,
         from: row.from_address,
@@ -289,9 +377,125 @@ fn relationship_row_to_edge(row: RelationshipReadRow) -> FlowEdge {
         timestamp: row.timestamp_unix,
         amount: row.amount_string,
         transfer_type: row.transfer_type,
+        operation_type,
+        relationship_type,
         protocol: row.protocol,
+        exchange_flow_type,
+        exchange_name,
+        exchange_confidence,
         risk_score: row.risk_score,
     }
+}
+
+fn build_flow_node(
+    node_id: &str,
+    exchange: Option<&ExchangeMetadata>,
+    entity: Option<&EntityMetadata>,
+    edges: &[FlowEdge],
+) -> FlowNode {
+    if let Some(exchange) = exchange {
+        return FlowNode {
+            id: node_id.to_string(),
+            label: format!("{} ({})", exchange.exchange_name, exchange.exchange_role),
+            node_type: "exchange_wallet".to_string(),
+            entity_name: Some(exchange.exchange_name.clone()),
+            entity_type: Some(format!(
+                "exchange_{}",
+                exchange.exchange_role.to_lowercase()
+            )),
+            exchange_name: Some(exchange.exchange_name.clone()),
+            exchange_role: Some(exchange.exchange_role.clone()),
+            confidence: Some(exchange.confidence),
+        };
+    }
+
+    if let Some(entity) = entity {
+        return FlowNode {
+            id: node_id.to_string(),
+            label: format!("{} ({})", entity.entity_name, entity.entity_type),
+            node_type: entity.entity_type.clone(),
+            entity_name: Some(entity.entity_name.clone()),
+            entity_type: Some(entity.entity_type.clone()),
+            exchange_name: None,
+            exchange_role: None,
+            confidence: Some(entity.confidence),
+        };
+    }
+
+    let node_type = infer_node_type(node_id, edges);
+    FlowNode {
+        id: node_id.to_string(),
+        label: node_label(node_id, &node_type),
+        node_type,
+        entity_name: None,
+        entity_type: None,
+        exchange_name: None,
+        exchange_role: None,
+        confidence: None,
+    }
+}
+
+fn infer_node_type(node_id: &str, edges: &[FlowEdge]) -> String {
+    if node_id.eq_ignore_ascii_case("bridge") {
+        return "bridge".to_string();
+    }
+
+    if edges
+        .iter()
+        .any(|edge| edge.transfer_type == "bridge" && edge.protocol == node_id)
+    {
+        return "bridge".to_string();
+    }
+
+    if edges
+        .iter()
+        .any(|edge| edge.transfer_type == "swap" && edge.to == node_id)
+    {
+        return "protocol".to_string();
+    }
+
+    "wallet".to_string()
+}
+
+fn node_label(node_id: &str, node_type: &str) -> String {
+    match node_type {
+        "bridge" => "Bridge".to_string(),
+        "protocol" => {
+            if node_id.is_empty() {
+                "Protocol".to_string()
+            } else {
+                node_id.to_string()
+            }
+        }
+        _ => short_address(node_id),
+    }
+}
+
+fn non_empty_string(value: String) -> Option<String> {
+    let value = value.trim().to_string();
+
+    if value.is_empty() { None } else { Some(value) }
+}
+
+fn neo4j_relationship_type(operation_type: &str, transfer_type: &str) -> String {
+    match operation_type {
+        "swap" => "SWAP",
+        "bridge" => "BRIDGE",
+        "deposit" => "EXCHANGE_DEPOSIT",
+        "withdrawal" => "EXCHANGE_WITHDRAWAL",
+        "sweep" => "EXCHANGE_SWEEP",
+        "internal_transfer" => "INTERNAL_TRANSFER",
+        "liquidity_add" => "LIQUIDITY_ADD",
+        "liquidity_remove" => "LIQUIDITY_REMOVE",
+        operation if operation.starts_with("exchange_to_exchange") => "EXCHANGE_TRANSFER",
+        _ => match transfer_type {
+            "native_transfer" => "NATIVE_TRANSFER",
+            "trc20_transfer" => "TRC20_TRANSFER",
+            "internal_transfer" => "INTERNAL_TRANSFER",
+            _ => "MONEY_FLOW",
+        },
+    }
+    .to_string()
 }
 
 fn incoming_origin_nodes(address: &str, nodes: &[FlowNode], edges: &[FlowEdge]) -> Vec<FlowNode> {
@@ -347,6 +551,7 @@ fn summary_from_edge(
         token_address: edge.token_address.clone(),
         amount: edge.amount.clone(),
         block_number: edge.block_number,
+        operation_type: edge.operation_type.clone(),
         confidence: exchange.confidence,
     }
 }
@@ -386,7 +591,12 @@ mod tests {
             block_number: 10,
             timestamp: 1,
             transfer_type: "native_transfer".to_string(),
+            operation_type: "native_transfer".to_string(),
+            relationship_type: "NATIVE_TRANSFER".to_string(),
             protocol: "".to_string(),
+            exchange_flow_type: None,
+            exchange_name: None,
+            exchange_confidence: None,
             risk_score: 0,
         };
 
@@ -404,6 +614,7 @@ mod tests {
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].direction, "outgoing");
         assert_eq!(summaries[0].exchange_name, "Binance");
+        assert_eq!(summaries[0].operation_type, "native_transfer");
     }
 
     #[test]

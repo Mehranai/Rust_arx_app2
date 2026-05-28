@@ -34,6 +34,17 @@ impl Neo4jClient {
             "CREATE INDEX transfer_tx_hash IF NOT EXISTS FOR ()-[t:TRANSFER]-() ON (t.tx_hash)",
             "CREATE INDEX wallet_exchange_role IF NOT EXISTS FOR (w:Wallet) ON (w.exchange_role)",
             "CREATE INDEX wallet_node_type IF NOT EXISTS FOR (w:Wallet) ON (w.node_type)",
+            "CREATE INDEX wallet_entity_type IF NOT EXISTS FOR (w:Wallet) ON (w.entity_type)",
+            "CREATE INDEX native_transfer_id IF NOT EXISTS FOR ()-[r:NATIVE_TRANSFER]-() ON (r.id)",
+            "CREATE INDEX trc20_transfer_id IF NOT EXISTS FOR ()-[r:TRC20_TRANSFER]-() ON (r.id)",
+            "CREATE INDEX swap_id IF NOT EXISTS FOR ()-[r:SWAP]-() ON (r.id)",
+            "CREATE INDEX bridge_id IF NOT EXISTS FOR ()-[r:BRIDGE]-() ON (r.id)",
+            "CREATE INDEX exchange_deposit_id IF NOT EXISTS FOR ()-[r:EXCHANGE_DEPOSIT]-() ON (r.id)",
+            "CREATE INDEX exchange_withdrawal_id IF NOT EXISTS FOR ()-[r:EXCHANGE_WITHDRAWAL]-() ON (r.id)",
+            "CREATE INDEX exchange_sweep_id IF NOT EXISTS FOR ()-[r:EXCHANGE_SWEEP]-() ON (r.id)",
+            "CREATE INDEX exchange_transfer_id IF NOT EXISTS FOR ()-[r:EXCHANGE_TRANSFER]-() ON (r.id)",
+            "CREATE INDEX internal_transfer_id IF NOT EXISTS FOR ()-[r:INTERNAL_TRANSFER]-() ON (r.id)",
+            "CREATE INDEX money_flow_id IF NOT EXISTS FOR ()-[r:MONEY_FLOW]-() ON (r.id)",
         ];
 
         for statement in statements {

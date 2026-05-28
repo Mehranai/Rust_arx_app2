@@ -66,15 +66,38 @@ pub async fn merge_transfer_edge(
     timestamp: u64,
     risk_score: u8,
     transfer_type: &str,
+    operation_type: &str,
+    relationship_type: &str,
     protocol: &str,
+    exchange_flow_type: Option<&str>,
+    exchange_name: Option<&str>,
+    exchange_confidence: Option<f32>,
 ) -> anyhow::Result<()> {
-    let q = query(
+    let relationship_type = safe_relationship_type(relationship_type);
+
+    let delete_previous_edge = query(
         "
-        MERGE (a:Wallet { address: $from })
+        MATCH (a:Wallet { address: $from })-[old { id: $edge_id }]->(b:Wallet { address: $to })
+        DELETE old
+        ",
+    )
+    .param("from", from)
+    .param("to", to)
+    .param("edge_id", edge_id);
+
+    neo4j
+        .graph
+        .run(delete_previous_edge)
+        .await
+        .map_err(|err| anyhow::anyhow!("failed to remove stale Neo4j flow edge: {:?}", err))?;
+
+    let q = query(&format!(
+        "
+        MERGE (a:Wallet {{ address: $from }})
         SET a:TronAddress
-        MERGE (b:Wallet { address: $to })
+        MERGE (b:Wallet {{ address: $to }})
         SET b:TronAddress
-        MERGE (a)-[t:TRANSFER { id: $edge_id }]->(b)
+        MERGE (a)-[t:{relationship_type} {{ id: $edge_id }}]->(b)
         SET t.tx_hash = $tx_hash,
             t.token = $token,
             t.amount = $amount,
@@ -82,10 +105,14 @@ pub async fn merge_transfer_edge(
             t.timestamp = $timestamp,
             t.risk_score = $risk_score,
             t.transfer_type = $transfer_type,
+            t.operation_type = $operation_type,
+            t.exchange_flow_type = $exchange_flow_type,
+            t.exchange_name = $exchange_name,
+            t.exchange_confidence_bps = $exchange_confidence_bps,
             t.protocol = $protocol,
             t.chain = 'tron'
         ",
-    )
+    ))
     .param("from", from)
     .param("to", to)
     .param("edge_id", edge_id)
@@ -96,6 +123,13 @@ pub async fn merge_transfer_edge(
     .param("timestamp", timestamp as i64)
     .param("risk_score", risk_score as i64)
     .param("transfer_type", transfer_type)
+    .param("operation_type", operation_type)
+    .param("exchange_flow_type", exchange_flow_type.unwrap_or(""))
+    .param("exchange_name", exchange_name.unwrap_or(""))
+    .param(
+        "exchange_confidence_bps",
+        (exchange_confidence.unwrap_or(0.0) * 10_000.0) as i64,
+    )
     .param("protocol", protocol);
 
     neo4j
@@ -105,6 +139,23 @@ pub async fn merge_transfer_edge(
         .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
     Ok(())
+}
+
+fn safe_relationship_type(relationship_type: &str) -> &'static str {
+    match relationship_type {
+        "SWAP" => "SWAP",
+        "BRIDGE" => "BRIDGE",
+        "EXCHANGE_DEPOSIT" => "EXCHANGE_DEPOSIT",
+        "EXCHANGE_WITHDRAWAL" => "EXCHANGE_WITHDRAWAL",
+        "EXCHANGE_SWEEP" => "EXCHANGE_SWEEP",
+        "EXCHANGE_TRANSFER" => "EXCHANGE_TRANSFER",
+        "INTERNAL_TRANSFER" => "INTERNAL_TRANSFER",
+        "LIQUIDITY_ADD" => "LIQUIDITY_ADD",
+        "LIQUIDITY_REMOVE" => "LIQUIDITY_REMOVE",
+        "NATIVE_TRANSFER" => "NATIVE_TRANSFER",
+        "TRC20_TRANSFER" => "TRC20_TRANSFER",
+        _ => "MONEY_FLOW",
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

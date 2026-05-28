@@ -5,6 +5,8 @@ pub struct FlowNode {
     pub id: String,
     pub label: String,
     pub node_type: String,
+    pub entity_name: Option<String>,
+    pub entity_type: Option<String>,
     pub exchange_name: Option<String>,
     pub exchange_role: Option<String>,
     pub confidence: Option<f32>,
@@ -21,7 +23,12 @@ pub struct FlowEdge {
     pub block_number: u64,
     pub timestamp: u64,
     pub transfer_type: String,
+    pub operation_type: String,
+    pub relationship_type: String,
     pub protocol: String,
+    pub exchange_flow_type: Option<String>,
+    pub exchange_name: Option<String>,
+    pub exchange_confidence: Option<f32>,
     pub risk_score: u8,
 }
 
@@ -35,6 +42,7 @@ pub struct ExchangeFlowSummary {
     pub token_address: String,
     pub amount: String,
     pub block_number: u64,
+    pub operation_type: String,
     pub confidence: f32,
 }
 
