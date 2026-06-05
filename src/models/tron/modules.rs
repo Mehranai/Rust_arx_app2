@@ -188,6 +188,18 @@ pub struct TransactionFeatureRow {
 
     pub timestamp: u64,
 
+    pub transaction_type: String,
+
+    pub transaction_subtype: String,
+
+    pub classification_confidence: f32,
+
+    pub classification_source: String,
+
+    pub protocol: String,
+
+    pub method_id: String,
+
     pub is_swap: u8,
 
     pub is_bridge: u8,
@@ -230,6 +242,10 @@ pub struct TransactionRiskRow {
     pub risk_score: u8,
 
     pub risk_level: String,
+
+    pub transaction_type: String,
+
+    pub transaction_subtype: String,
 
     pub is_swap: u8,
 

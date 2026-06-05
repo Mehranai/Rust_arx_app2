@@ -6,7 +6,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 
 use crate::models::token_transfer::TokenTransferRow;
 use crate::models::transaction::Sensivity;
-use crate::progress::progress::{save_sync_state, save_token_transfer, save_tx, save_wallet};
+use crate::progress::core::{save_sync_state, save_token_transfer, save_tx, save_wallet};
 use crate::services::loader::LoaderEth;
 use crate::services::token_metadata_worker;
 

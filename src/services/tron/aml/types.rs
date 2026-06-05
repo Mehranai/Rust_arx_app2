@@ -44,6 +44,18 @@ pub enum AmlEvent {
         user: String,
         token: String,
     },
+
+    LiquidityAdd {
+        user: String,
+        lp_token: String,
+        sent_tokens: Vec<String>,
+    },
+
+    LiquidityRemove {
+        user: String,
+        lp_token: String,
+        received_tokens: Vec<String>,
+    },
 }
 
 pub type FlowMap = HashMap<String, HashMap<String, i128>>;

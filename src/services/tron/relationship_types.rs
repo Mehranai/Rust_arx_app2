@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone)]
 pub enum RelationshipType {
     NativeTransfer,
@@ -16,12 +18,16 @@ pub enum RelationshipType {
 
     LiquidityRemove,
 
+    Mint,
+
+    Burn,
+
     InternalTransfer,
 }
 
-impl ToString for RelationshipType {
-    fn to_string(&self) -> String {
-        match self {
+impl fmt::Display for RelationshipType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let relationship_type = match self {
             Self::NativeTransfer => "native_transfer",
 
             Self::Trc20Transfer => "trc20_transfer",
@@ -38,8 +44,13 @@ impl ToString for RelationshipType {
 
             Self::LiquidityRemove => "liquidity_remove",
 
+            Self::Mint => "mint",
+
+            Self::Burn => "burn",
+
             Self::InternalTransfer => "internal_transfer",
-        }
-        .to_string()
+        };
+
+        f.write_str(relationship_type)
     }
 }

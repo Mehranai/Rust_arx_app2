@@ -31,20 +31,20 @@ pub fn classify(input: &ClassificationInput, transfers: &[SimpleTransfer]) -> Cl
     //
     // method decoding
     //
-    if let Some(ref data) = input.method_data {
-        if let Some((method_id, protocol_info)) = detect_method(data) {
-            return ClassificationResult {
-                protocol: protocol_info.protocol.to_string(),
+    if let Some(ref data) = input.method_data
+        && let Some((method_id, protocol_info)) = detect_method(data)
+    {
+        return ClassificationResult {
+            protocol: protocol_info.protocol.to_string(),
 
-                category: protocol_info.category,
+            category: protocol_info.category,
 
-                confidence: boost_confidence(protocol_info.confidence, false, true, false),
+            confidence: boost_confidence(protocol_info.confidence, false, true, false),
 
-                detection_source: "method_signature".to_string(),
+            detection_source: "method_signature".to_string(),
 
-                method_id: Some(method_id),
-            };
-        }
+            method_id: Some(method_id),
+        };
     }
 
     //

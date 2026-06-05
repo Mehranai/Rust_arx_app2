@@ -1,58 +1,6 @@
 use super::client::Neo4jClient;
 use neo4rs::query;
 
-pub async fn create_transfer_edge(
-    neo4j: &Neo4jClient,
-
-    from: &str,
-    to: &str,
-
-    tx_hash: &str,
-
-    token: &str,
-
-    amount: &str,
-
-    risk_score: u8,
-
-    transfer_type: &str,
-) -> anyhow::Result<()> {
-    let q = query(
-        "
-        MERGE (a:Wallet {
-            address: $from
-        })
-
-        MERGE (b:Wallet {
-            address: $to
-        })
-
-        CREATE (a)-[:TRANSFER {
-            tx_hash: $tx_hash,
-            token: $token,
-            amount: $amount,
-            risk_score: $risk_score,
-            transfer_type: $transfer_type
-        }]->(b)
-        ",
-    )
-    .param("from", from)
-    .param("to", to)
-    .param("tx_hash", tx_hash)
-    .param("token", token)
-    .param("amount", amount)
-    .param("risk_score", risk_score as i64)
-    .param("transfer_type", transfer_type);
-
-    neo4j
-        .graph
-        .run(q)
-        .await
-        .map_err(|err| anyhow::anyhow!("failed to create Neo4j transfer edge: {:?}", err))?;
-
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 pub async fn merge_transfer_edge(
     neo4j: &Neo4jClient,
@@ -152,6 +100,8 @@ fn safe_relationship_type(relationship_type: &str) -> &'static str {
         "INTERNAL_TRANSFER" => "INTERNAL_TRANSFER",
         "LIQUIDITY_ADD" => "LIQUIDITY_ADD",
         "LIQUIDITY_REMOVE" => "LIQUIDITY_REMOVE",
+        "MINT" => "MINT",
+        "BURN" => "BURN",
         "NATIVE_TRANSFER" => "NATIVE_TRANSFER",
         "TRC20_TRANSFER" => "TRC20_TRANSFER",
         _ => "MONEY_FLOW",

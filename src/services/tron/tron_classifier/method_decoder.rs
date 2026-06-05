@@ -31,11 +31,101 @@ pub static METHOD_SIGNATURES: Lazy<HashMap<&'static str, ProtocolInfo>> = Lazy::
         },
     );
 
+    map.insert(
+        "18cbafe5",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.85,
+        },
+    );
+
+    map.insert(
+        "8803dbee",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.85,
+        },
+    );
+
+    map.insert(
+        "fb3bdb41",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.85,
+        },
+    );
+
+    map.insert(
+        "4a25d94a",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.85,
+        },
+    );
+
+    map.insert(
+        "5c11d795",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.85,
+        },
+    );
+
     //
     // addLiquidity
     //
     map.insert(
         "e8e33700",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.80,
+        },
+    );
+
+    map.insert(
+        "f305d719",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.80,
+        },
+    );
+
+    map.insert(
+        "baa2abde",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.80,
+        },
+    );
+
+    map.insert(
+        "02751cec",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.80,
+        },
+    );
+
+    map.insert(
+        "2195995c",
+        ProtocolInfo {
+            protocol: "GenericDex",
+            category: ContractCategory::Dex,
+            confidence: 0.80,
+        },
+    );
+
+    map.insert(
+        "af2979eb",
         ProtocolInfo {
             protocol: "GenericDex",
             category: ContractCategory::Dex,
@@ -52,6 +142,42 @@ pub static METHOD_SIGNATURES: Lazy<HashMap<&'static str, ProtocolInfo>> = Lazy::
             protocol: "GenericLending",
             category: ContractCategory::Lending,
             confidence: 0.90,
+        },
+    );
+
+    map.insert(
+        "40c10f19",
+        ProtocolInfo {
+            protocol: "GenericToken",
+            category: ContractCategory::Token,
+            confidence: 0.75,
+        },
+    );
+
+    map.insert(
+        "1249c58b",
+        ProtocolInfo {
+            protocol: "GenericToken",
+            category: ContractCategory::Token,
+            confidence: 0.70,
+        },
+    );
+
+    map.insert(
+        "42966c68",
+        ProtocolInfo {
+            protocol: "GenericToken",
+            category: ContractCategory::Token,
+            confidence: 0.75,
+        },
+    );
+
+    map.insert(
+        "89afcb44",
+        ProtocolInfo {
+            protocol: "GenericToken",
+            category: ContractCategory::Token,
+            confidence: 0.70,
         },
     );
 

@@ -1,4 +1,4 @@
-use crate::handlers::{health, status, tron_graph};
+use crate::handlers::{dashboard, health, status, tron_graph};
 use axum::{
     Router,
     routing::{get, post},
@@ -6,6 +6,7 @@ use axum::{
 
 pub fn build_router() -> Router {
     Router::new()
+        .route("/", get(dashboard::dashboard))
         .route("/health", get(health::health_check))
         .route("/status", get(status::status))
         .route(
@@ -14,6 +15,14 @@ pub fn build_router() -> Router {
         )
         .route(
             "/tron/wallet/{address}/neo4j/import",
+            post(tron_graph::tron_wallet_graph),
+        )
+        .route(
+            "/api/tron/wallet/{address}/graph",
+            get(tron_graph::tron_wallet_graph),
+        )
+        .route(
+            "/api/tron/wallet/{address}/neo4j/import",
             post(tron_graph::tron_wallet_graph),
         )
 }

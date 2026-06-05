@@ -1,5 +1,4 @@
 use anyhow::Result;
-use tokio;
 
 use arz_axum_for_services::config::{AppConfig, AppMode};
 use arz_axum_for_services::tasks::fetch_loop::{

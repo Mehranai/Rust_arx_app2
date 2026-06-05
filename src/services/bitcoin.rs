@@ -1,6 +1,6 @@
 use crate::models::blockstreams::*;
 use crate::models::transaction::Sensivity;
-use crate::progress::progress::{save_tx, save_wallet};
+use crate::progress::core::{save_tx, save_wallet};
 use crate::services::loader::LoaderBtc;
 
 use crate::db::sync_state::{get_last_synced_block, update_last_synced_block};

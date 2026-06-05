@@ -248,7 +248,7 @@ fn is_bridge_event(sig: H256) -> bool {
         .any(|s| H256::from(keccak256(s.as_bytes())) == sig)
 }
 
-fn find_bridge_event<'a>(receipt: &'a TransactionReceipt) -> Option<&'a ethers::types::Log> {
+fn find_bridge_event(receipt: &TransactionReceipt) -> Option<&ethers::types::Log> {
     receipt
         .logs
         .iter()
@@ -314,6 +314,11 @@ pub enum Asset {
     Eth,
     Erc20(Address),
 }
+
+type RawAssetAmount = (Asset, U256);
+type StakeFlow = (Asset, U256, Option<RawAssetAmount>);
+type WithdrawFlow = (Asset, U256, Option<RawAssetAmount>);
+type DepositFlow = (Asset, U256, Option<RawAssetAmount>);
 
 #[derive(Debug, Clone)]
 pub struct AssetAmount {
@@ -558,7 +563,7 @@ fn has_weth_wrap_or_unwrap(receipt: &TransactionReceipt) -> bool {
     receipt
         .logs
         .iter()
-        .any(|log| log.topics.get(0) == Some(&deposit) || log.topics.get(0) == Some(&withdraw))
+        .any(|log| log.topics.first() == Some(&deposit) || log.topics.first() == Some(&withdraw))
 }
 
 pub fn extract_simple_eth_transfer(
@@ -723,17 +728,13 @@ fn has_stake_intent(tx: &Transaction) -> bool {
 
     let selector: [u8; 4] = input[0..4].try_into().unwrap();
 
-    stake_method_selectors().iter().any(|s| *s == selector)
+    stake_method_selectors().contains(&selector)
 }
 fn extract_stake_flows(
     tx: &Transaction,
     receipt: &TransactionReceipt,
     user: Address,
-) -> Option<(
-    Asset,                 // sent_asset
-    U256,                  // sent_amount
-    Option<(Asset, U256)>, // received (optional)
-)> {
+) -> Option<StakeFlow> {
     let staking_contract = tx.to?;
 
     // ---------------- ETH stake ----------------
@@ -847,17 +848,13 @@ fn has_withdraw_intent(tx: &Transaction) -> bool {
 
     let selector: [u8; 4] = input[0..4].try_into().unwrap();
 
-    withdraw_method_selectors().iter().any(|s| *s == selector)
+    withdraw_method_selectors().contains(&selector)
 }
 fn extract_withdraw_flows(
     tx: &Transaction,
     receipt: &TransactionReceipt,
     user: Address,
-) -> Option<(
-    Asset,                 // received_asset
-    U256,                  // received_amount
-    Option<(Asset, U256)>, // burned (receipt token)
-)> {
+) -> Option<WithdrawFlow> {
     let staking_contract = tx.to?;
 
     let mut received: Option<(Asset, U256)> = None;
@@ -866,7 +863,7 @@ fn extract_withdraw_flows(
     // ---------------- ETH receive ----------------
 
     for log in &receipt.logs {
-        if log.topics.get(0) == Some(&weth_withdraw_sig()) {
+        if log.topics.first() == Some(&weth_withdraw_sig()) {
             let amount = U256::from_big_endian(&log.data.0);
             received = Some((Asset::Eth, amount));
         }
@@ -976,13 +973,13 @@ fn has_deposit_intent(tx: &Transaction) -> bool {
 
     let selector: [u8; 4] = input[0..4].try_into().unwrap();
 
-    deposit_method_selectors().iter().any(|s| *s == selector)
+    deposit_method_selectors().contains(&selector)
 }
 fn extract_deposit_flows(
     tx: &Transaction,
     receipt: &TransactionReceipt,
     user: Address,
-) -> Option<(Asset, U256, Option<(Asset, U256)>)> {
+) -> Option<DepositFlow> {
     let contract = tx.to?;
 
     // ---------------- ETH deposit ----------------

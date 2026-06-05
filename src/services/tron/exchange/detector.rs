@@ -11,7 +11,10 @@ use crate::services::tron::aml::types::SimpleTransfer;
 
 use super::seeds::exchange_seeds;
 
-use super::types::{ExchangeAttribution, ExchangeWalletRole};
+use super::types::{
+    ExchangeAttribution, ExchangeWalletRole, exchange_entity_id, unattributed_exchange_entity_id,
+    unattributed_exchange_name,
+};
 
 pub fn detect_exchange(address: &str) -> Option<ExchangeAttribution> {
     //
@@ -27,6 +30,7 @@ pub fn detect_exchange(address: &str) -> Option<ExchangeAttribution> {
 
 #[derive(Debug, Deserialize, clickhouse::Row)]
 struct StoredExchangeAttributionRow {
+    entity_id: String,
     exchange_name: String,
     role: String,
     confidence: f32,
@@ -47,6 +51,7 @@ pub async fn load_exchange_attribution(
         .query(
             r#"
             SELECT
+                entity_id,
                 exchange_name,
                 role,
                 confidence,
@@ -55,6 +60,7 @@ pub async fn load_exchange_attribution(
             FROM
             (
                 SELECT
+                    entity_id,
                     exchange_name,
                     address_role AS role,
                     confidence,
@@ -64,6 +70,7 @@ pub async fn load_exchange_attribution(
                 WHERE address = ?
                 UNION ALL
                 SELECT
+                    '' AS entity_id,
                     exchange_name,
                     'DEPOSIT' AS role,
                     confidence,
@@ -86,7 +93,11 @@ pub async fn load_exchange_attribution(
         role: row.role,
         confidence: row.confidence,
         detection_source: row.detection_source,
-        cluster_id: Some(exchange_entity_id(&row.exchange_name)),
+        cluster_id: Some(if row.entity_id.is_empty() {
+            exchange_entity_id(&row.exchange_name)
+        } else {
+            row.entity_id
+        }),
     }))
 }
 
@@ -113,6 +124,7 @@ struct ExchangeCounterparty {
     exchange_name: String,
     role: String,
     confidence: f32,
+    cluster_id: String,
     last_seen_block: u64,
     tx_count: u64,
 }
@@ -139,21 +151,26 @@ pub async fn detect_exchange_attributions(
 
     for address in candidates {
         if let Some(seed) = detect_exchange(&address) {
+            let cluster_id = seed
+                .cluster_id
+                .clone()
+                .unwrap_or_else(|| exchange_entity_id(&seed.exchange_name));
+
             push_detection(
                 &mut detections,
                 &mut seen,
-                build_address_row(
-                    &address,
-                    &seed.exchange_name,
-                    &seed.role,
-                    seed.confidence,
-                    &seed.detection_source,
-                    block_number,
-                    block_number,
-                ),
+                build_address_row(ExchangeAddressBuild {
+                    address: &address,
+                    entity_id: &cluster_id,
+                    exchange_name: &seed.exchange_name,
+                    role: &seed.role,
+                    confidence: seed.confidence,
+                    detection_source: &seed.detection_source,
+                    first_seen_block: block_number,
+                    last_seen_block: block_number,
+                }),
                 None,
-                seed.cluster_id
-                    .unwrap_or_else(|| exchange_entity_id(&seed.exchange_name)),
+                cluster_id,
                 "seed",
             );
 
@@ -170,119 +187,74 @@ pub async fn detect_exchange_attributions(
                 None => find_exchange_counterparty(&clickhouse, &address).await?,
             };
 
-        if let Some(counterparty) = exchange_counterparty {
-            if is_probable_deposit(&stats, &counterparty) {
-                let confidence = deposit_confidence(&stats, counterparty.confidence);
+        if let Some(counterparty) = exchange_counterparty
+            && is_probable_deposit(&stats, &counterparty)
+        {
+            let confidence = deposit_confidence(&stats, counterparty.confidence);
 
-                let exchange_name = counterparty.exchange_name.clone();
-                let cluster_id = exchange_entity_id(&exchange_name);
-                let row = build_address_row(
-                    &address,
-                    &exchange_name,
-                    &ExchangeWalletRole::Deposit.to_string(),
-                    confidence,
-                    "deposit_sweep_to_exchange_wallet",
-                    stats.first_seen_block,
-                    stats.last_seen_block.max(counterparty.last_seen_block),
-                );
-
-                let deposit = ExchangeDepositAddressRow {
-                    address: address.clone(),
-                    exchange_name: exchange_name.clone(),
-                    hot_wallet: counterparty.address.clone(),
-                    confidence,
-                    detection_method: format!(
-                        "swept_to_{}_{}",
-                        counterparty.role.to_lowercase(),
-                        counterparty.tx_count
-                    ),
-                    first_seen_block: stats.first_seen_block,
-                    last_seen_block: stats.last_seen_block.max(counterparty.last_seen_block),
-                };
-
-                push_detection(
-                    &mut detections,
-                    &mut seen,
-                    row,
-                    Some(deposit),
-                    cluster_id,
-                    &counterparty.address,
-                );
-
-                continue;
-            }
-        }
-
-        if is_probable_hot_wallet(&stats) {
-            let confidence = hot_wallet_confidence(&stats);
-            let exchange_name = "UnknownExchange";
-            let row = build_address_row(
-                &address,
-                exchange_name,
-                &ExchangeWalletRole::Hot.to_string(),
+            let exchange_name = counterparty.exchange_name.clone();
+            let cluster_id = counterparty.cluster_id.clone();
+            let row = build_address_row(ExchangeAddressBuild {
+                address: &address,
+                entity_id: &cluster_id,
+                exchange_name: &exchange_name,
+                role: &ExchangeWalletRole::Deposit.to_string(),
                 confidence,
-                "high_fan_in_and_fan_out_exchange_hot_wallet",
-                stats.first_seen_block,
-                stats.last_seen_block,
-            );
+                detection_source: "deposit_sweep_to_exchange_wallet",
+                first_seen_block: stats.first_seen_block,
+                last_seen_block: stats.last_seen_block.max(counterparty.last_seen_block),
+            });
+
+            let deposit = ExchangeDepositAddressRow {
+                address: address.clone(),
+                exchange_name: exchange_name.clone(),
+                hot_wallet: counterparty.address.clone(),
+                confidence,
+                detection_method: format!(
+                    "swept_to_{}_{}",
+                    counterparty.role.to_lowercase(),
+                    counterparty.tx_count
+                ),
+                first_seen_block: stats.first_seen_block,
+                last_seen_block: stats.last_seen_block.max(counterparty.last_seen_block),
+            };
 
             push_detection(
                 &mut detections,
                 &mut seen,
                 row,
-                None,
-                exchange_entity_id(exchange_name),
-                "fan_in_fan_out",
+                Some(deposit),
+                cluster_id,
+                &counterparty.address,
             );
 
             continue;
         }
 
-        if is_probable_sweep_wallet(&stats) {
-            let confidence = sweeper_confidence(&stats);
-            let exchange_name = "UnknownExchange";
-            let row = build_address_row(
-                &address,
-                exchange_name,
-                &ExchangeWalletRole::Sweep.to_string(),
+        if let Some((role, confidence, detection_source, discovered_from)) =
+            probable_exchange_role(&stats)
+        {
+            let exchange_name = unattributed_exchange_name(&address);
+            let cluster_id = unattributed_exchange_entity_id(&address);
+            let role = role.to_string();
+            let row = build_address_row(ExchangeAddressBuild {
+                address: &address,
+                entity_id: &cluster_id,
+                exchange_name: &exchange_name,
+                role: &role,
                 confidence,
-                "many_deposit_wallets_to_one_sweeper",
-                stats.first_seen_block,
-                stats.last_seen_block,
-            );
+                detection_source,
+                first_seen_block: stats.first_seen_block,
+                last_seen_block: stats.last_seen_block,
+            });
 
             push_detection(
                 &mut detections,
                 &mut seen,
                 row,
                 None,
-                exchange_entity_id(exchange_name),
-                "inbound_fan_in",
-            );
-
-            continue;
-        }
-
-        if is_probable_withdraw_wallet(&stats) {
-            let confidence = withdraw_confidence(&stats);
-            let exchange_name = "UnknownExchange";
-            let row = build_address_row(
-                &address,
-                exchange_name,
-                &ExchangeWalletRole::Withdraw.to_string(),
-                confidence,
-                "one_wallet_to_many_withdrawals",
-                stats.first_seen_block,
-                stats.last_seen_block,
-            );
-
-            push_detection(
-                &mut detections,
-                &mut seen,
-                row,
-                None,
-                exchange_entity_id(exchange_name),
-                "outbound_fan_out",
+                cluster_id,
+                discovered_from,
             );
         }
     }
@@ -320,39 +292,28 @@ fn push_detection(
     });
 }
 
-fn build_address_row(
-    address: &str,
-    exchange_name: &str,
-    role: &str,
+struct ExchangeAddressBuild<'a> {
+    address: &'a str,
+    entity_id: &'a str,
+    exchange_name: &'a str,
+    role: &'a str,
     confidence: f32,
-    detection_source: &str,
+    detection_source: &'a str,
     first_seen_block: u64,
     last_seen_block: u64,
-) -> ExchangeAddressRow {
-    ExchangeAddressRow {
-        address: address.to_string(),
-        entity_id: exchange_entity_id(exchange_name),
-        exchange_name: exchange_name.to_string(),
-        address_role: role.to_string(),
-        confidence,
-        detection_source: detection_source.to_string(),
-        first_seen_block,
-        last_seen_block,
-    }
 }
 
-pub fn exchange_entity_id(exchange_name: &str) -> String {
-    let mut id = String::from("exchange:");
-
-    for ch in exchange_name.chars() {
-        if ch.is_ascii_alphanumeric() {
-            id.push(ch.to_ascii_lowercase());
-        } else if ch.is_whitespace() || ch == '-' || ch == '_' {
-            id.push('_');
-        }
+fn build_address_row(input: ExchangeAddressBuild<'_>) -> ExchangeAddressRow {
+    ExchangeAddressRow {
+        address: input.address.to_string(),
+        entity_id: input.entity_id.to_string(),
+        exchange_name: input.exchange_name.to_string(),
+        address_role: input.role.to_string(),
+        confidence: input.confidence,
+        detection_source: input.detection_source.to_string(),
+        first_seen_block: input.first_seen_block,
+        last_seen_block: input.last_seen_block,
     }
-
-    id.trim_end_matches('_').to_string()
 }
 
 async fn load_address_stats(clickhouse: &Client, address: &str) -> anyhow::Result<AddressStats> {
@@ -435,6 +396,7 @@ async fn find_exchange_counterparty(
             r#"
             SELECT
                 ar.to_address,
+                ea.entity_id,
                 ea.exchange_name,
                 ea.address_role,
                 ea.confidence,
@@ -448,6 +410,7 @@ async fn find_exchange_counterparty(
               AND ea.address_role IN ('HOT', 'SWEEP', 'TREASURY', 'INTERNAL')
             GROUP BY
                 ar.to_address,
+                ea.entity_id,
                 ea.exchange_name,
                 ea.address_role,
                 ea.confidence
@@ -456,21 +419,22 @@ async fn find_exchange_counterparty(
             "#,
         )
         .bind(address)
-        .fetch_all::<(String, String, String, f32, u64, u64, u64)>()
+        .fetch_all::<(String, String, String, String, f32, u64, u64, u64)>()
         .await?;
 
     if let Some(row) = rows.into_iter().next() {
         return Ok(Some(ExchangeCounterparty {
             address: row.0,
-            exchange_name: row.1,
-            role: row.2,
-            confidence: row.3,
-            last_seen_block: row.5,
-            tx_count: row.6,
+            cluster_id: row.1,
+            exchange_name: row.2,
+            role: row.3,
+            confidence: row.4,
+            last_seen_block: row.6,
+            tx_count: row.7,
         }));
     }
 
-    Ok(seed_counterparty_for_recent_outgoing(clickhouse, address).await?)
+    seed_counterparty_for_recent_outgoing(clickhouse, address).await
 }
 
 async fn current_exchange_counterparty(
@@ -485,17 +449,51 @@ async fn current_exchange_counterparty(
     }
 
     for transfer in transfers.iter().filter(|transfer| transfer.from == address) {
-        if let Some(exchange) = load_exchange_attribution(clickhouse, &transfer.to).await? {
-            if is_exchange_counterparty_role(&exchange.role) {
-                return Ok(Some(ExchangeCounterparty {
-                    address: transfer.to.clone(),
-                    exchange_name: exchange.exchange_name,
-                    role: exchange.role,
-                    confidence: exchange.confidence,
-                    last_seen_block: block_number,
-                    tx_count: 1,
-                }));
-            }
+        if let Some(exchange) = load_exchange_attribution(clickhouse, &transfer.to).await?
+            && is_exchange_counterparty_role(&exchange.role)
+        {
+            return Ok(Some(ExchangeCounterparty {
+                address: transfer.to.clone(),
+                cluster_id: exchange
+                    .cluster_id
+                    .clone()
+                    .unwrap_or_else(|| exchange_entity_id(&exchange.exchange_name)),
+                exchange_name: exchange.exchange_name,
+                role: exchange.role,
+                confidence: exchange.confidence,
+                last_seen_block: block_number,
+                tx_count: 1,
+            }));
+        }
+    }
+
+    current_inferred_exchange_counterparty(clickhouse, address, block_number, transfers).await
+}
+
+async fn current_inferred_exchange_counterparty(
+    clickhouse: &Client,
+    address: &str,
+    block_number: u64,
+    transfers: &[SimpleTransfer],
+) -> anyhow::Result<Option<ExchangeCounterparty>> {
+    for transfer in transfers.iter().filter(|transfer| transfer.from == address) {
+        if transfer.to == address {
+            continue;
+        }
+
+        let stats = load_address_stats(clickhouse, &transfer.to).await?;
+        let stats = stats_with_current_transfers(stats, &transfer.to, block_number, transfers);
+
+        if let Some((role, confidence, _, _)) = probable_exchange_role(&stats) {
+            return Ok(Some(ExchangeCounterparty {
+                address: transfer.to.clone(),
+                cluster_id: unattributed_exchange_entity_id(&transfer.to),
+                exchange_name: unattributed_exchange_name(&transfer.to),
+                role: role.to_string(),
+                confidence,
+                last_seen_block: stats.last_seen_block.max(block_number),
+                tx_count: 1,
+            }));
         }
     }
 
@@ -520,6 +518,10 @@ fn current_seed_exchange_counterparty(
 
                 Some(ExchangeCounterparty {
                     address: transfer.to.clone(),
+                    cluster_id: seed
+                        .cluster_id
+                        .clone()
+                        .unwrap_or_else(|| exchange_entity_id(&seed.exchange_name)),
                     exchange_name: seed.exchange_name.clone(),
                     role: seed.role.clone(),
                     confidence: seed.confidence,
@@ -562,6 +564,10 @@ async fn seed_counterparty_for_recent_outgoing(
         if let Some(seed) = seed_map.get(&row.0) {
             return Ok(Some(ExchangeCounterparty {
                 address: row.0,
+                cluster_id: seed
+                    .cluster_id
+                    .clone()
+                    .unwrap_or_else(|| exchange_entity_id(&seed.exchange_name)),
                 exchange_name: seed.exchange_name.clone(),
                 role: seed.role.clone(),
                 confidence: seed.confidence,
@@ -576,14 +582,16 @@ async fn seed_counterparty_for_recent_outgoing(
 
 fn is_probable_deposit(stats: &AddressStats, counterparty: &ExchangeCounterparty) -> bool {
     let sends_to_exchange = counterparty.tx_count > 0;
-    let low_outbound_diversity = stats.unique_receivers <= 3;
-    let has_customer_side = stats.inbound_txs > 0 || stats.unique_senders > 0;
+    let low_outbound_diversity = stats.unique_receivers <= 2;
+    let has_customer_side = stats.inbound_txs >= 2 || stats.unique_senders >= 2;
+    let mostly_sweeps_to_exchange =
+        stats.outbound_txs <= 10 && stats.outbound_txs <= stats.inbound_txs.saturating_add(2);
 
     sends_to_exchange
         && stats.outbound_txs > 0
         && low_outbound_diversity
         && has_customer_side
-        && stats.outbound_txs <= 25
+        && mostly_sweeps_to_exchange
 }
 
 fn is_probable_sweep_wallet(stats: &AddressStats) -> bool {
@@ -603,6 +611,39 @@ fn is_probable_withdraw_wallet(stats: &AddressStats) -> bool {
     stats.outbound_txs >= MIN_WITHDRAW_OUTBOUND_TXS
         && stats.unique_receivers >= MIN_WITHDRAW_UNIQUE_RECEIVERS
         && stats.unique_receivers > stats.unique_senders.saturating_mul(3)
+}
+
+fn probable_exchange_role(
+    stats: &AddressStats,
+) -> Option<(ExchangeWalletRole, f32, &'static str, &'static str)> {
+    if is_probable_hot_wallet(stats) {
+        return Some((
+            ExchangeWalletRole::Hot,
+            hot_wallet_confidence(stats),
+            "high_fan_in_and_fan_out_exchange_hot_wallet",
+            "fan_in_fan_out",
+        ));
+    }
+
+    if is_probable_sweep_wallet(stats) {
+        return Some((
+            ExchangeWalletRole::Sweep,
+            sweeper_confidence(stats),
+            "many_deposit_wallets_to_one_sweeper",
+            "inbound_fan_in",
+        ));
+    }
+
+    if is_probable_withdraw_wallet(stats) {
+        return Some((
+            ExchangeWalletRole::Withdraw,
+            withdraw_confidence(stats),
+            "one_wallet_to_many_withdrawals",
+            "outbound_fan_out",
+        ));
+    }
+
+    None
 }
 
 fn hot_wallet_confidence(stats: &AddressStats) -> f32 {
@@ -736,12 +777,38 @@ mod tests {
             exchange_name: "Binance".to_string(),
             role: ExchangeWalletRole::Hot.to_string(),
             confidence: 1.0,
+            cluster_id: exchange_entity_id("Binance"),
             last_seen_block: 2,
             tx_count: 1,
         };
 
         assert!(is_probable_deposit(&stats, &counterparty));
         assert!(deposit_confidence(&stats, counterparty.confidence) >= 0.90);
+    }
+
+    #[test]
+    fn does_not_classify_single_customer_deposit_as_exchange_deposit_wallet() {
+        let stats = stats(1, 1, 1, 1);
+        let counterparty = ExchangeCounterparty {
+            address: "TAUN6FwrnwwmaEqYcckffC7wYmbaS6cBiX".to_string(),
+            exchange_name: "Binance".to_string(),
+            role: ExchangeWalletRole::Hot.to_string(),
+            confidence: 1.0,
+            cluster_id: exchange_entity_id("Binance"),
+            last_seen_block: 2,
+            tx_count: 1,
+        };
+
+        assert!(!is_probable_deposit(&stats, &counterparty));
+    }
+
+    #[test]
+    fn unattributed_exchange_clusters_are_address_scoped() {
+        let first = unattributed_exchange_entity_id("TAAAA1111");
+        let second = unattributed_exchange_entity_id("TBBBB2222");
+
+        assert_ne!(first, second);
+        assert!(first.starts_with("exchange:unattributed:"));
     }
 
     #[test]

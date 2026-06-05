@@ -44,6 +44,10 @@ impl Neo4jClient {
             "CREATE INDEX exchange_sweep_id IF NOT EXISTS FOR ()-[r:EXCHANGE_SWEEP]-() ON (r.id)",
             "CREATE INDEX exchange_transfer_id IF NOT EXISTS FOR ()-[r:EXCHANGE_TRANSFER]-() ON (r.id)",
             "CREATE INDEX internal_transfer_id IF NOT EXISTS FOR ()-[r:INTERNAL_TRANSFER]-() ON (r.id)",
+            "CREATE INDEX liquidity_add_id IF NOT EXISTS FOR ()-[r:LIQUIDITY_ADD]-() ON (r.id)",
+            "CREATE INDEX liquidity_remove_id IF NOT EXISTS FOR ()-[r:LIQUIDITY_REMOVE]-() ON (r.id)",
+            "CREATE INDEX mint_id IF NOT EXISTS FOR ()-[r:MINT]-() ON (r.id)",
+            "CREATE INDEX burn_id IF NOT EXISTS FOR ()-[r:BURN]-() ON (r.id)",
             "CREATE INDEX money_flow_id IF NOT EXISTS FOR ()-[r:MONEY_FLOW]-() ON (r.id)",
         ];
 

@@ -9,7 +9,7 @@ use ethers::types::Address;
 use tokio::sync::Semaphore;
 
 use crate::models::token_metadata::TokenMetadataRow;
-use crate::progress::progress::save_token_metadata;
+use crate::progress::core::save_token_metadata;
 
 // ERC20 ABI
 abigen!(

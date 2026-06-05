@@ -2,7 +2,11 @@ use crate::services::tron::aml::flow_engine::compute_net_flows;
 
 use crate::services::tron::aml::types::{AmlEvent, SimpleTransfer, ZERO_ADDRESS};
 
-pub fn detect_bridges(transfers: &[SimpleTransfer]) -> Vec<AmlEvent> {
+pub fn detect_bridges(transfers: &[SimpleTransfer], bridge_protocol_hint: bool) -> Vec<AmlEvent> {
+    if !bridge_protocol_hint {
+        return Vec::new();
+    }
+
     let flows = compute_net_flows(transfers);
 
     let mut events = Vec::new();

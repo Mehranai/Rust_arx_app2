@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use crate::models::token_metadata::TokenMetadataRow;
-use crate::progress::progress::save_token_metadata;
+use crate::progress::core::save_token_metadata;
 use crate::services::loader::LoaderTron;
 
 pub async fn fetch_token_metadata(

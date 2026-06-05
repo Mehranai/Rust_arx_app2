@@ -710,6 +710,18 @@ CREATE TABLE IF NOT EXISTS tron_db.transaction_features
 
     timestamp UInt64,
 
+    transaction_type String DEFAULT 'unknown',
+
+    transaction_subtype String DEFAULT '',
+
+    classification_confidence Float32 DEFAULT 0,
+
+    classification_source String DEFAULT '',
+
+    protocol String DEFAULT '',
+
+    method_id String DEFAULT '',
+
     is_swap UInt8,
 
     is_bridge UInt8,
@@ -758,6 +770,10 @@ CREATE TABLE IF NOT EXISTS tron_db.transaction_risk
     risk_score UInt8,
 
     risk_level String,
+
+    transaction_type String DEFAULT 'unknown',
+
+    transaction_subtype String DEFAULT '',
 
     is_swap UInt8,
 
@@ -1294,10 +1310,39 @@ ALTER TABLE tron_db.transaction_features
     TYPE minmax
     GRANULARITY 4;
 
+ALTER TABLE tron_db.transaction_features
+    ADD COLUMN IF NOT EXISTS transaction_type String DEFAULT 'unknown';
+
+ALTER TABLE tron_db.transaction_features
+    ADD COLUMN IF NOT EXISTS transaction_subtype String DEFAULT '';
+
+ALTER TABLE tron_db.transaction_features
+    ADD COLUMN IF NOT EXISTS classification_confidence Float32 DEFAULT 0;
+
+ALTER TABLE tron_db.transaction_features
+    ADD COLUMN IF NOT EXISTS classification_source String DEFAULT '';
+
+ALTER TABLE tron_db.transaction_features
+    ADD COLUMN IF NOT EXISTS protocol String DEFAULT '';
+
+ALTER TABLE tron_db.transaction_features
+    ADD COLUMN IF NOT EXISTS method_id String DEFAULT '';
+
+ALTER TABLE tron_db.transaction_features
+    ADD INDEX IF NOT EXISTS idx_transaction_type (transaction_type)
+    TYPE set(100)
+    GRANULARITY 4;
+
 ALTER TABLE tron_db.transaction_risk
     ADD INDEX IF NOT EXISTS idx_risk (risk_score)
     TYPE minmax
     GRANULARITY 4;
+
+ALTER TABLE tron_db.transaction_risk
+    ADD COLUMN IF NOT EXISTS transaction_type String DEFAULT 'unknown';
+
+ALTER TABLE tron_db.transaction_risk
+    ADD COLUMN IF NOT EXISTS transaction_subtype String DEFAULT '';
 
 ALTER TABLE tron_db.contract_interactions
     ADD INDEX IF NOT EXISTS idx_interaction (interaction_type)

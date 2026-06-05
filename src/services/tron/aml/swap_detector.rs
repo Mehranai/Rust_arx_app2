@@ -4,7 +4,7 @@ use crate::services::tron::aml::flow_engine::compute_net_flows;
 
 use crate::services::tron::aml::types::{AmlEvent, SimpleTransfer, ZERO_ADDRESS};
 
-pub fn detect_swaps(transfers: &[SimpleTransfer]) -> Vec<AmlEvent> {
+pub fn detect_swaps(transfers: &[SimpleTransfer], actor: Option<&str>) -> Vec<AmlEvent> {
     let flows = compute_net_flows(transfers);
 
     let mut events = Vec::new();
@@ -12,6 +12,10 @@ pub fn detect_swaps(transfers: &[SimpleTransfer]) -> Vec<AmlEvent> {
     let mut dedup = HashSet::new();
 
     for (address, token_map) in flows {
+        if actor.is_some_and(|actor| actor != address) {
+            continue;
+        }
+
         if address == ZERO_ADDRESS {
             continue;
         }

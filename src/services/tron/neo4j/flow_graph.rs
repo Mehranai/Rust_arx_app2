@@ -440,6 +440,14 @@ fn infer_node_type(node_id: &str, edges: &[FlowEdge]) -> String {
         return "bridge".to_string();
     }
 
+    if node_id.eq_ignore_ascii_case("mint") {
+        return "mint".to_string();
+    }
+
+    if node_id.eq_ignore_ascii_case("burn") {
+        return "burn".to_string();
+    }
+
     if edges
         .iter()
         .any(|edge| edge.transfer_type == "bridge" && edge.protocol == node_id)
@@ -460,6 +468,8 @@ fn infer_node_type(node_id: &str, edges: &[FlowEdge]) -> String {
 fn node_label(node_id: &str, node_type: &str) -> String {
     match node_type {
         "bridge" => "Bridge".to_string(),
+        "mint" => "Mint".to_string(),
+        "burn" => "Burn".to_string(),
         "protocol" => {
             if node_id.is_empty() {
                 "Protocol".to_string()
@@ -487,11 +497,15 @@ fn neo4j_relationship_type(operation_type: &str, transfer_type: &str) -> String 
         "internal_transfer" => "INTERNAL_TRANSFER",
         "liquidity_add" => "LIQUIDITY_ADD",
         "liquidity_remove" => "LIQUIDITY_REMOVE",
+        "mint" => "MINT",
+        "burn" => "BURN",
         operation if operation.starts_with("exchange_to_exchange") => "EXCHANGE_TRANSFER",
         _ => match transfer_type {
             "native_transfer" => "NATIVE_TRANSFER",
             "trc20_transfer" => "TRC20_TRANSFER",
             "internal_transfer" => "INTERNAL_TRANSFER",
+            "mint" => "MINT",
+            "burn" => "BURN",
             _ => "MONEY_FLOW",
         },
     }
@@ -520,16 +534,16 @@ fn exchange_summaries(
     let mut summaries = Vec::<ExchangeFlowSummary>::new();
 
     for edge in edges {
-        if edge.from == address {
-            if let Some(exchange) = metadata.get(&edge.to) {
-                summaries.push(summary_from_edge(edge, &edge.to, exchange, "outgoing"));
-            }
+        if edge.from == address
+            && let Some(exchange) = metadata.get(&edge.to)
+        {
+            summaries.push(summary_from_edge(edge, &edge.to, exchange, "outgoing"));
         }
 
-        if edge.to == address {
-            if let Some(exchange) = metadata.get(&edge.from) {
-                summaries.push(summary_from_edge(edge, &edge.from, exchange, "incoming"));
-            }
+        if edge.to == address
+            && let Some(exchange) = metadata.get(&edge.from)
+        {
+            summaries.push(summary_from_edge(edge, &edge.from, exchange, "incoming"));
         }
     }
 

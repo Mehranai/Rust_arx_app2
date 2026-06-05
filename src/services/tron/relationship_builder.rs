@@ -132,7 +132,88 @@ pub fn build_relationships(
                     risk_score,
                 });
             }
-            _ => {}
+            AmlEvent::LiquidityAdd {
+                user,
+                lp_token,
+                sent_tokens,
+            } => {
+                rows.push(AddressRelationshipRow {
+                    relationship_id: relationship_id(
+                        tx_hash,
+                        "liquidity_add",
+                        index,
+                        user,
+                        protocol,
+                        lp_token,
+                    ),
+                    from_address: user.clone(),
+                    to_address: protocol.to_string(),
+                    token_address: format!("{}->{}", sent_tokens.join(","), lp_token),
+                    tx_hash: tx_hash.to_string(),
+                    block_number,
+                    timestamp,
+                    amount: 0,
+                    transfer_type: RelationshipType::LiquidityAdd.to_string(),
+                    protocol: protocol.to_string(),
+                    risk_score,
+                });
+            }
+            AmlEvent::LiquidityRemove {
+                user,
+                lp_token,
+                received_tokens,
+            } => {
+                rows.push(AddressRelationshipRow {
+                    relationship_id: relationship_id(
+                        tx_hash,
+                        "liquidity_remove",
+                        index,
+                        protocol,
+                        user,
+                        lp_token,
+                    ),
+                    from_address: protocol.to_string(),
+                    to_address: user.clone(),
+                    token_address: format!("{}->{}", lp_token, received_tokens.join(",")),
+                    tx_hash: tx_hash.to_string(),
+                    block_number,
+                    timestamp,
+                    amount: 0,
+                    transfer_type: RelationshipType::LiquidityRemove.to_string(),
+                    protocol: protocol.to_string(),
+                    risk_score,
+                });
+            }
+            AmlEvent::Mint { user, token } => {
+                rows.push(AddressRelationshipRow {
+                    relationship_id: relationship_id(tx_hash, "mint", index, "mint", user, token),
+                    from_address: "mint".to_string(),
+                    to_address: user.clone(),
+                    token_address: token.clone(),
+                    tx_hash: tx_hash.to_string(),
+                    block_number,
+                    timestamp,
+                    amount: 0,
+                    transfer_type: RelationshipType::Mint.to_string(),
+                    protocol: protocol.to_string(),
+                    risk_score,
+                });
+            }
+            AmlEvent::Burn { user, token } => {
+                rows.push(AddressRelationshipRow {
+                    relationship_id: relationship_id(tx_hash, "burn", index, user, "burn", token),
+                    from_address: user.clone(),
+                    to_address: "burn".to_string(),
+                    token_address: token.clone(),
+                    tx_hash: tx_hash.to_string(),
+                    block_number,
+                    timestamp,
+                    amount: 0,
+                    transfer_type: RelationshipType::Burn.to_string(),
+                    protocol: protocol.to_string(),
+                    risk_score,
+                });
+            }
         }
     }
 

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -14,9 +16,9 @@ pub enum ContractCategory {
     Unknown,
 }
 
-impl ToString for ContractCategory {
-    fn to_string(&self) -> String {
-        match self {
+impl fmt::Display for ContractCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let category = match self {
             Self::Dex => "DEX",
             Self::Bridge => "BRIDGE",
             Self::Lending => "LENDING",
@@ -27,8 +29,9 @@ impl ToString for ContractCategory {
             Self::Scam => "SCAM",
             Self::Wallet => "WALLET",
             Self::Unknown => "UNKNOWN",
-        }
-        .to_string()
+        };
+
+        f.write_str(category)
     }
 }
 

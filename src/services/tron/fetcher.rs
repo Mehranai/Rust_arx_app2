@@ -11,7 +11,7 @@ use crate::models::tron::modules::TransactionRow;
 use crate::models::tron::modules::TronRawLogRow;
 use crate::models::tron::modules::TronTokenTransferRow;
 
-use crate::progress::progress::save_sync_state;
+use crate::progress::core::save_sync_state;
 
 use crate::progress::progress_tron::{
     ContractMetadataRow, save_address_entity, save_exchange_address, save_exchange_cluster,
@@ -25,6 +25,7 @@ use crate::utils::tron_address::normalize_tron_address;
 
 // aml section
 use crate::services::tron::aml::bridge_detector::detect_bridges;
+use crate::services::tron::aml::liquidity_detector::detect_liquidity_events;
 use crate::services::tron::aml::swap_detector::detect_swaps;
 use crate::services::tron::aml::types::SimpleTransfer;
 
@@ -32,6 +33,9 @@ use crate::services::tron::tron_classifier::classifier::classify;
 use crate::services::tron::tron_classifier::types::{ClassificationInput, ContractCategory};
 
 use crate::services::tron::risk_engine::compute_risk_score;
+use crate::services::tron::transaction_type::{
+    TransactionSemanticsInput, classify_transaction_semantics,
+};
 use crate::services::tron::tron_metadata_worker;
 
 use crate::services::tron::aml::mint_burn_detector::detect_mints_and_burns;
@@ -60,6 +64,12 @@ fn extract_contract_type(tx: &Value) -> String {
         .as_str()
         .unwrap_or("Unknown")
         .to_string()
+}
+
+fn extract_owner_address(tx: &Value) -> Option<String> {
+    tx["raw_data"]["contract"][0]["parameter"]["value"]["owner_address"]
+        .as_str()
+        .and_then(normalize_tron_address)
 }
 
 fn extract_transfer_contract(tx: &Value) -> Option<(String, String, u64)> {
@@ -193,16 +203,20 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
     }
 
     let mut simple_transfers = Vec::<SimpleTransfer>::new();
+    let mut semantic_transfers = Vec::<SimpleTransfer>::new();
 
     if !from.is_empty() && !to.is_empty() && value > 0 {
-        simple_transfers.push(SimpleTransfer {
+        let transfer = SimpleTransfer {
             token: "TRX".to_string(),
 
             from: from.clone(),
             to: to.clone(),
 
             amount: value as u128,
-        });
+        };
+
+        simple_transfers.push(transfer.clone());
+        semantic_transfers.push(transfer);
     }
 
     let receipt = {
@@ -236,6 +250,15 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
         .as_str()
         .and_then(normalize_tron_address)
         .unwrap_or_default();
+    let owner_address = extract_owner_address(&tx).unwrap_or_default();
+
+    if from.is_empty() && !owner_address.is_empty() {
+        from = owner_address.clone();
+    }
+
+    if to.is_empty() && !contract_address.is_empty() {
+        to = contract_address.clone();
+    }
 
     loader
         .transaction_batcher
@@ -305,13 +328,17 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
 
         discovered_tokens.insert(token.clone());
 
-        if from_addr != ZERO_ADDRESS && to_addr != ZERO_ADDRESS {
-            simple_transfers.push(SimpleTransfer {
-                token,
-                from: from_addr,
-                to: to_addr,
-                amount,
-            });
+        let semantic_transfer = SimpleTransfer {
+            token,
+            from: from_addr,
+            to: to_addr,
+            amount,
+        };
+
+        semantic_transfers.push(semantic_transfer.clone());
+
+        if semantic_transfer.from != ZERO_ADDRESS && semantic_transfer.to != ZERO_ADDRESS {
+            simple_transfers.push(semantic_transfer);
         }
     }
 
@@ -331,7 +358,7 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
             contract_address: contract_address.clone(),
             method_data,
         },
-        &simple_transfers,
+        &semantic_transfers,
     );
 
     let is_contract_call = match classification.category {
@@ -362,62 +389,37 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
     }
 
     // AML features
-    if !simple_transfers.is_empty() {
-        let swaps = detect_swaps(&simple_transfers);
-        let mint_burns = detect_mints_and_burns(&simple_transfers);
+    if !semantic_transfers.is_empty() {
+        let semantic_actor = (!from.is_empty()).then_some(from.as_str());
+        let liquidity_events = detect_liquidity_events(&semantic_transfers, semantic_actor);
+        let raw_swaps = detect_swaps(&semantic_transfers, semantic_actor);
+        let swaps = if liquidity_events.is_empty() {
+            raw_swaps
+        } else {
+            Vec::new()
+        };
+        let mint_burns = detect_mints_and_burns(&semantic_transfers);
+        let bridge_protocol_hint = classification.category == ContractCategory::Bridge;
+        let bridges = detect_bridges(&semantic_transfers, bridge_protocol_hint);
 
-        let bridges = detect_bridges(&simple_transfers);
-
-        let unique_tokens = simple_transfers
+        let unique_tokens = semantic_transfers
             .iter()
             .map(|t| t.token.clone())
             .collect::<HashSet<_>>()
             .len() as u16;
 
-        let participants = simple_transfers
+        let participants = semantic_transfers
             .iter()
             .flat_map(|t| vec![t.from.clone(), t.to.clone()])
+            .filter(|address| address != ZERO_ADDRESS)
             .collect::<HashSet<_>>()
             .len() as u16;
-
-        let feature = TransactionFeatureRow {
-            tx_hash: txid.clone(),
-
-            block_number,
-
-            timestamp,
-
-            is_swap: (!swaps.is_empty()) as u8,
-
-            is_bridge: (!bridges.is_empty()) as u8,
-
-            is_mint: (!mint_burns.is_empty()) as u8,
-
-            is_burn: (!mint_burns.is_empty()) as u8,
-
-            is_liquidity_add: 0,
-
-            is_liquidity_remove: 0,
-
-            is_contract_call,
-
-            unique_tokens,
-
-            participants,
-
-            hop_count: simple_transfers.len() as u16,
-
-            fan_in: participants,
-
-            fan_out: participants,
-        };
 
         let mut aml_events = Vec::new();
         aml_events.extend(swaps.clone());
         aml_events.extend(bridges.clone());
         aml_events.extend(mint_burns.clone());
-
-        loader.transaction_feature_batcher.push(feature).await?;
+        aml_events.extend(liquidity_events.clone());
 
         // risk engine
         let (risk_score, risk_level) = compute_risk_score(
@@ -427,29 +429,6 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
             unique_tokens,
             participants,
         );
-
-        let risk_row = TransactionRiskRow {
-            tx_hash: txid.clone(),
-            block_number,
-            timestamp,
-
-            risk_score,
-            risk_level,
-
-            is_swap: (!swaps.is_empty()) as u8,
-            is_bridge: (!bridges.is_empty()) as u8,
-            is_contract_call,
-
-            unique_tokens,
-            participants,
-
-            risk_reasons: vec![],
-            exposure_depth: 0,
-            touches_sanctioned: 0,
-            touches_mixer: 0,
-            touches_exchange: 0,
-        };
-        loader.transaction_risk_batcher.push(risk_row).await?;
 
         let relationships = build_relationships(
             &txid,
@@ -555,9 +534,144 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
         )
         .await?;
 
+        let semantics = classify_transaction_semantics(TransactionSemanticsInput {
+            classification: &classification,
+            contract_type: &contract_type,
+            is_contract_call: is_contract_call == 1,
+            transfers: &semantic_transfers,
+            swaps: &swaps,
+            bridges: &bridges,
+            mint_burns: &mint_burns,
+            liquidity_events: &liquidity_events,
+            exchange_flows: &exchange_flows,
+        });
+
+        let feature = TransactionFeatureRow {
+            tx_hash: txid.clone(),
+            block_number,
+            timestamp,
+            transaction_type: semantics.transaction_type.clone(),
+            transaction_subtype: semantics.transaction_subtype.clone(),
+            classification_confidence: semantics.confidence,
+            classification_source: semantics.source.clone(),
+            protocol: semantics.protocol.clone(),
+            method_id: semantics.method_id.clone(),
+            is_swap: semantics.is_swap,
+            is_bridge: semantics.is_bridge,
+            is_mint: semantics.is_mint,
+            is_burn: semantics.is_burn,
+            is_liquidity_add: semantics.is_liquidity_add,
+            is_liquidity_remove: semantics.is_liquidity_remove,
+            is_contract_call,
+            unique_tokens,
+            participants,
+            hop_count: semantic_transfers.len() as u16,
+            fan_in: participants,
+            fan_out: participants,
+        };
+
+        loader.transaction_feature_batcher.push(feature).await?;
+
+        let risk_row = TransactionRiskRow {
+            tx_hash: txid.clone(),
+            block_number,
+            timestamp,
+            risk_score,
+            risk_level,
+            transaction_type: semantics.transaction_type.clone(),
+            transaction_subtype: semantics.transaction_subtype.clone(),
+            is_swap: semantics.is_swap,
+            is_bridge: semantics.is_bridge,
+            is_contract_call,
+            unique_tokens,
+            participants,
+            risk_reasons: vec![format!(
+                "transaction_type:{}:{}",
+                semantics.transaction_type, semantics.transaction_subtype
+            )],
+            exposure_depth: 0,
+            touches_sanctioned: 0,
+            touches_mixer: 0,
+            touches_exchange: (!exchange_flows.is_empty()) as u8,
+        };
+
+        loader.transaction_risk_batcher.push(risk_row).await?;
+
         for flow in exchange_flows {
             loader.exchange_flow_batcher.push(flow).await?;
         }
+    } else {
+        let participants = [from.as_str(), to.as_str()]
+            .into_iter()
+            .filter(|address| !address.is_empty())
+            .collect::<HashSet<_>>()
+            .len() as u16;
+        let semantics = classify_transaction_semantics(TransactionSemanticsInput {
+            classification: &classification,
+            contract_type: &contract_type,
+            is_contract_call: is_contract_call == 1,
+            transfers: &simple_transfers,
+            swaps: &[],
+            bridges: &[],
+            mint_burns: &[],
+            liquidity_events: &[],
+            exchange_flows: &[],
+        });
+        let (risk_score, risk_level) =
+            compute_risk_score(&classification, false, false, 0, participants);
+
+        loader
+            .transaction_feature_batcher
+            .push(TransactionFeatureRow {
+                tx_hash: txid.clone(),
+                block_number,
+                timestamp,
+                transaction_type: semantics.transaction_type.clone(),
+                transaction_subtype: semantics.transaction_subtype.clone(),
+                classification_confidence: semantics.confidence,
+                classification_source: semantics.source.clone(),
+                protocol: semantics.protocol.clone(),
+                method_id: semantics.method_id.clone(),
+                is_swap: semantics.is_swap,
+                is_bridge: semantics.is_bridge,
+                is_mint: semantics.is_mint,
+                is_burn: semantics.is_burn,
+                is_liquidity_add: semantics.is_liquidity_add,
+                is_liquidity_remove: semantics.is_liquidity_remove,
+                is_contract_call,
+                unique_tokens: 0,
+                participants,
+                hop_count: 0,
+                fan_in: 0,
+                fan_out: 0,
+            })
+            .await?;
+
+        loader
+            .transaction_risk_batcher
+            .push(TransactionRiskRow {
+                tx_hash: txid.clone(),
+                block_number,
+                timestamp,
+                risk_score,
+                risk_level,
+                transaction_type: semantics.transaction_type.clone(),
+                transaction_subtype: semantics.transaction_subtype.clone(),
+                is_swap: semantics.is_swap,
+                is_bridge: semantics.is_bridge,
+                is_contract_call,
+                unique_tokens: 0,
+                participants,
+                risk_reasons: vec![format!(
+                    "transaction_type:{}:{}",
+                    semantics.transaction_type, semantics.transaction_subtype
+                )],
+                exposure_depth: 0,
+                touches_sanctioned: 0,
+                touches_mixer: 0,
+                touches_exchange: 0,
+            })
+            .await?;
     }
 
     Ok(())
@@ -603,7 +717,7 @@ pub async fn fetch_tron(loader: Arc<LoaderTron>, start_block: u64, total_txs: u6
 
         let mut fully_processed = true;
 
-        let tx_vec = txs.iter().cloned().collect::<Vec<_>>();
+        let tx_vec = txs.to_vec();
 
         let remaining = total_txs.saturating_sub(tx_count);
 
@@ -644,7 +758,9 @@ pub async fn fetch_tron(loader: Arc<LoaderTron>, start_block: u64, total_txs: u6
 
                     match res {
                         Ok(()) => {
-                            if processed == 1 || processed % 10 == 0 || processed == block_tx_total
+                            if processed == 1
+                                || processed.is_multiple_of(10)
+                                || processed == block_tx_total
                             {
                                 println!(
                                     "[TRON] block {} processed {}/{} transaction(s)",

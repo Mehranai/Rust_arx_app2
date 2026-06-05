@@ -9,5 +9,6 @@ pub mod neo4j;
 pub mod relationship_builder;
 pub mod relationship_types;
 pub mod risk_engine;
+pub mod transaction_type;
 pub mod tron_classifier;
 pub mod tron_metadata_worker;

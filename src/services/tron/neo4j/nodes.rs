@@ -1,25 +1,7 @@
 use super::client::Neo4jClient;
 use neo4rs::query;
 
-pub async fn upsert_wallet(neo4j: &Neo4jClient, address: &str) -> anyhow::Result<()> {
-    let q = query(
-        "
-        MERGE (w:Wallet {
-            address: $address
-        })
-        ",
-    )
-    .param("address", address);
-
-    neo4j
-        .graph
-        .run(q)
-        .await
-        .map_err(|err| anyhow::anyhow!("failed to upsert Neo4j wallet node: {:?}", err))?;
-
-    Ok(())
-}
-
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_wallet_with_metadata(
     neo4j: &Neo4jClient,
     address: &str,
@@ -64,17 +46,17 @@ pub async fn upsert_wallet_with_metadata(
 
     apply_node_type_label(neo4j, address, node_type).await?;
 
-    if let Some(exchange) = exchange_name {
-        if !exchange.is_empty() {
-            upsert_exchange(
-                neo4j,
-                address,
-                exchange,
-                exchange_role.unwrap_or(""),
-                confidence,
-            )
-            .await?;
-        }
+    if let Some(exchange) = exchange_name
+        && !exchange.is_empty()
+    {
+        upsert_exchange(
+            neo4j,
+            address,
+            exchange,
+            exchange_role.unwrap_or(""),
+            confidence,
+        )
+        .await?;
     }
 
     Ok(())
@@ -88,6 +70,8 @@ async fn apply_node_type_label(
     let label_query = match node_type {
         "exchange_wallet" => "MATCH (w:Wallet { address: $address }) SET w:ExchangeWallet",
         "bridge" => "MATCH (w:Wallet { address: $address }) SET w:Bridge:Protocol",
+        "mint" => "MATCH (w:Wallet { address: $address }) SET w:TokenLifecycle:Mint",
+        "burn" => "MATCH (w:Wallet { address: $address }) SET w:TokenLifecycle:Burn",
         "protocol" => "MATCH (w:Wallet { address: $address }) SET w:Protocol",
         entity if entity.starts_with("exchange_") => {
             "MATCH (w:Wallet { address: $address }) SET w:ExchangeWallet"
