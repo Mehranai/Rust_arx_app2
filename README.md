@@ -51,3 +51,7 @@ neo4j/password
     cargo run --bin tron_graph_api
     curl -X POST "http://localhost:3000/tron/wallet/<TRON_WALLET_ADDRESS>/neo4j/import?depth=3&limit=500"
 
+## New way of Web section
+
+    cargo run --bin tron_graph_api
+    http://127.0.0.1:3000/
