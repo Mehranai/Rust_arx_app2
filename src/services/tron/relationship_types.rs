@@ -3,25 +3,15 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum RelationshipType {
     NativeTransfer,
-
     Trc20Transfer,
-
     Swap,
-
     Bridge,
-
     ExchangeDeposit,
-
     ExchangeWithdraw,
-
     LiquidityAdd,
-
     LiquidityRemove,
-
     Mint,
-
     Burn,
-
     InternalTransfer,
 }
 
