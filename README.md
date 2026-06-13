@@ -37,6 +37,7 @@ select * from wallet_info;
 
 ### Docker Neo4j section
 
+    docker network create blockchain-net
     docker compose up -d clickhouse neo4j
     cargo run --bin arz_axum_for_services
     cargo run --bin tron_export_wallet_graph -- TEPSrSYPDSQ7yXpMFPq91Fb1QEWpMkRGfn 5 500
@@ -47,7 +48,7 @@ with
 neo4j/password
 
 ### use this to visualize 
-
+    
     cargo run --bin tron_graph_api
     curl -X POST "http://localhost:3000/tron/wallet/<TRON_WALLET_ADDRESS>/neo4j/import?depth=3&limit=500"
 
