@@ -56,3 +56,38 @@ neo4j/password
 
     cargo run --bin tron_graph_api
     http://127.0.0.1:3000/
+
+## TRON wallet fingerprint API
+
+Wallet fingerprinting identifies the target wallet, its direct sender wallets, and
+its direct receiver wallets from historical `address_relationships` flow data. The
+API combines exchange attribution, entity labels, contract metadata, transaction
+risk, DeFi behavior, bridge behavior, activity timing, token diversity, and
+counterparty concentration.
+
+Run the graph API:
+
+```bash
+cargo run --bin tron_graph_api
+```
+
+Query a wallet fingerprint:
+
+```bash
+curl "http://127.0.0.1:3000/api/tron/wallet/<TRON_WALLET_ADDRESS>/fingerprint?window_days=90&top_counterparties=25&max_events=20000"
+```
+
+The response includes:
+
+- `identity`: best current label for the requested wallet, using exchange/entity/contract/profile data.
+- `fingerprint_label` and `wallet_type`: behavior class such as exchange deposit funnel, collector, distributor, DeFi swapper, bridge user, service hub, or retail wallet.
+- `flows`: inbound/outbound transfer counts, unique sender and receiver counts, raw volume totals, and observed transaction risk.
+- `behavior`: active hours, active days, burst score, average transaction interval, token diversity, contract/swap/bridge/exchange ratios, and counterparty concentration.
+- `senders`: direct wallets that funded the target wallet, each with identity, relationship label, tokens, volume, first/last seen, risk, and share of wallet activity.
+- `receivers`: direct wallets that received funds from the target wallet, with the same fingerprint details.
+- `risk_flags`: compact AML flags for high risk transactions, exchange-heavy flow, burst activity, concentration, fan-in/fan-out patterns, swap-heavy activity, and bridge-heavy activity.
+
+Schema hooks are also created in ClickHouse:
+
+- `wallet_fingerprints` stores wallet-level snapshots for search and dashboards.
+- `wallet_counterparty_fingerprints` stores sender/receiver relationship snapshots for fast investigation views.

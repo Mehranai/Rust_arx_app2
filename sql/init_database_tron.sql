@@ -434,6 +434,106 @@ CREATE TABLE IF NOT EXISTS tron_db.address_behavior
     ORDER BY address;
 
 -- =========================================================
+-- WALLET FINGERPRINTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tron_db.wallet_fingerprints
+(
+    address String,
+
+    window_days UInt16,
+
+    fingerprint_label String,
+    wallet_type String,
+
+    identity_type String,
+    entity_name String DEFAULT '',
+    entity_type String DEFAULT '',
+
+    exchange_name String DEFAULT '',
+    exchange_role String DEFAULT '',
+
+    confidence Float32,
+    risk_score Float32,
+
+    total_transfers UInt64,
+    unique_transactions UInt64,
+
+    incoming_transfers UInt64,
+    outgoing_transfers UInt64,
+
+    unique_senders UInt64,
+    unique_receivers UInt64,
+
+    token_diversity UInt32,
+
+    contract_call_ratio Float32,
+    swap_ratio Float32,
+    bridge_ratio Float32,
+    exchange_interaction_ratio Float32,
+
+    counterparty_concentration Float32,
+    burst_score Float32,
+    avg_tx_interval_seconds Float64,
+
+    active_hours Array(UInt8),
+
+    top_sender_addresses Array(String),
+    top_receiver_addresses Array(String),
+
+    risk_flags Array(String),
+
+    generated_at DateTime DEFAULT now(),
+    updated_at DateTime DEFAULT now()
+    )
+    ENGINE = ReplacingMergeTree(updated_at)
+    ORDER BY (
+                 address,
+                 window_days
+             );
+
+CREATE TABLE IF NOT EXISTS tron_db.wallet_counterparty_fingerprints
+(
+    address String,
+
+    counterparty String,
+    direction String,
+
+    relationship_label String,
+
+    identity_type String,
+    entity_name String DEFAULT '',
+    entity_type String DEFAULT '',
+
+    exchange_name String DEFAULT '',
+    exchange_role String DEFAULT '',
+
+    confidence Float32,
+
+    transfer_count UInt64,
+    unique_transactions UInt64,
+    total_volume_raw String,
+
+    first_seen_timestamp UInt64,
+    last_seen_timestamp UInt64,
+
+    tokens Array(String),
+    dominant_token String DEFAULT '',
+
+    avg_risk_score Float32,
+    max_risk_score UInt8,
+    share_of_wallet_transfers Float32,
+
+    updated_at DateTime DEFAULT now()
+    )
+    ENGINE = ReplacingMergeTree(updated_at)
+    ORDER BY (
+                 address,
+                 direction,
+                 counterparty
+             );
+
+-- =========================================================
 -- ADDRESS TAGS
 -- =========================================================
 
