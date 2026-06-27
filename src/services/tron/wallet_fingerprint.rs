@@ -257,11 +257,11 @@ async fn load_wallet_events(
         .query(
             r#"
             SELECT
-                ar.tx_hash,
-                ar.timestamp,
+                ar.tx_hash AS tx_hash,
+                ar.timestamp AS timestamp,
                 if(ar.from_address = ?, 'out', 'in') AS direction,
                 if(ar.from_address = ?, ar.to_address, ar.from_address) AS counterparty,
-                ar.token_address,
+                ar.token_address AS token_address,
                 toString(ar.amount) AS amount_raw,
                 ifNull(tr.risk_score, ar.risk_score) AS risk_score,
                 ifNull(tf.is_swap, toUInt8(0)) AS is_swap,

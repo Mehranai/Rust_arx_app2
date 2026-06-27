@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, Query},
-    response::Json,
+    http::StatusCode,
+    response::{IntoResponse, Json, Response},
 };
 use clickhouse::Client;
 use serde::Deserialize;
@@ -18,13 +19,42 @@ pub struct WalletFingerprintQuery {
     pub max_events: Option<u64>,
 }
 
+#[derive(Debug)]
+pub struct WalletFingerprintError {
+    status: StatusCode,
+    message: String,
+}
+
+impl WalletFingerprintError {
+    fn bad_request(message: String) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message,
+        }
+    }
+
+    fn internal(err: anyhow::Error) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: format!("{err:#}"),
+        }
+    }
+}
+
+impl IntoResponse for WalletFingerprintError {
+    fn into_response(self) -> Response {
+        (self.status, self.message).into_response()
+    }
+}
+
 pub async fn tron_wallet_fingerprint(
     Path(address): Path<String>,
     Query(params): Query<WalletFingerprintQuery>,
-) -> Result<Json<WalletFingerprint>, String> {
+) -> Result<Json<WalletFingerprint>, WalletFingerprintError> {
     let config = AppConfig::from_env();
-    let address = normalize_tron_address(&address)
-        .ok_or_else(|| format!("invalid Tron wallet address: {}", address))?;
+    let address = normalize_tron_address(&address).ok_or_else(|| {
+        WalletFingerprintError::bad_request(format!("invalid Tron wallet address: {address}"))
+    })?;
 
     let clickhouse = Arc::new(
         Client::default()
@@ -42,7 +72,7 @@ pub async fn tron_wallet_fingerprint(
         params.max_events,
     )
     .await
-    .map_err(|err| err.to_string())?;
+    .map_err(WalletFingerprintError::internal)?;
 
     Ok(Json(fingerprint))
 }

@@ -91,3 +91,8 @@ Schema hooks are also created in ClickHouse:
 
 - `wallet_fingerprints` stores wallet-level snapshots for search and dashboards.
 - `wallet_counterparty_fingerprints` stores sender/receiver relationship snapshots for fast investigation views.
+
+One Example to see output of fingerprint:
+```bash
+curl "http://127.0.0.1:4000/api/tron/wallet/THMMcdQ2badbBzmnzYGYCaFq9qpyiCh1rn/fingerprint?window_days=90&top_counterparties=25&max_events=20000" | ConvertFrom-Json | ConvertTo-Json -Depth 10 
+```
