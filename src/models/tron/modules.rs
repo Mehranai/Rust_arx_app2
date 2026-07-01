@@ -60,17 +60,11 @@ pub struct TronTokenTransferRow {
 
     pub token_address: String,
 
-    pub token_symbol: String,
-
-    pub decimals: u8,
-
     pub from_address: String,
 
     pub to_address: String,
 
     pub amount: u128,
-
-    pub amount_decimal: f64,
 
     pub is_mint: u8,
 
@@ -102,76 +96,6 @@ pub struct TronRawLogRow {
     pub removed: u8,
 
     pub timestamp: u64,
-}
-
-//
-// ======================================================
-// CONTRACT CALLS
-// ======================================================
-//
-
-#[derive(Debug, Row, Serialize, Clone)]
-pub struct TronContractCallRow {
-    pub tx_hash: String,
-
-    pub block_number: u64,
-
-    pub timestamp: u64,
-
-    pub caller: String,
-
-    pub contract_address: String,
-
-    pub protocol: String,
-
-    pub interaction_type: String,
-
-    pub method_id: String,
-
-    pub token_in: String,
-
-    pub amount_in: u128,
-
-    pub token_out: String,
-
-    pub amount_out: u128,
-
-    pub confidence: f32,
-}
-
-//
-// ======================================================
-// AML EVENTS
-// ======================================================
-//
-
-#[derive(Debug, Row, Serialize, Clone)]
-pub struct TronClassifiedEventRow {
-    pub event_id: String,
-
-    pub tx_hash: String,
-
-    pub block_number: u64,
-
-    pub timestamp: u64,
-
-    pub event_type: String,
-
-    pub protocol: String,
-
-    pub user_address: String,
-
-    pub counterparty: String,
-
-    pub token_in: String,
-
-    pub amount_in: u128,
-
-    pub token_out: String,
-
-    pub amount_out: u128,
-
-    pub confidence: f32,
 }
 
 //
@@ -259,36 +183,5 @@ pub struct TransactionRiskRow {
 
     pub risk_reasons: Vec<String>,
 
-    pub exposure_depth: u16,
-
-    pub touches_sanctioned: u8,
-
-    pub touches_mixer: u8,
-
     pub touches_exchange: u8,
-}
-
-//
-// ======================================================
-// ADDRESS ENERGY
-// ======================================================
-//
-
-#[derive(Debug, Row, Serialize, Clone)]
-pub struct TronAddressEnergyRow {
-    pub address: String,
-
-    pub block_number: u64,
-
-    pub energy_usage: u64,
-
-    pub energy_fee: u64,
-
-    pub net_usage: u64,
-
-    pub net_fee: u64,
-
-    pub tx_hash: String,
-
-    pub timestamp: u64,
 }

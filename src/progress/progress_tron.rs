@@ -15,6 +15,8 @@ use crate::models::tron::exposure::{AddressExposureRow, ExposureSeedRow};
 pub struct ContractMetadataRow {
     pub contract_address: String,
 
+    pub protocol_name: String,
+
     pub contract_type: String,
 
     pub creator_address: String,

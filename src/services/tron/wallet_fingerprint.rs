@@ -140,7 +140,6 @@ struct EntityIdentityRow {
 struct ContractIdentityRow {
     protocol_name: String,
     contract_type: String,
-    verified: u8,
 }
 
 #[derive(Debug, Clone, Deserialize, clickhouse::Row)]
@@ -337,10 +336,10 @@ async fn load_wallet_identity(
         return Ok(contract_identity(address, contract));
     }
 
-    if let Some(profile) = load_profile_identity(clickhouse, address).await? {
-        if let Some(identity) = profile_identity(address, profile) {
-            return Ok(identity);
-        }
+    if let Some(profile) = load_profile_identity(clickhouse, address).await?
+        && let Some(identity) = profile_identity(address, profile)
+    {
+        return Ok(identity);
     }
 
     Ok(WalletIdentity {
@@ -438,11 +437,10 @@ async fn load_contract_identity(
             r#"
             SELECT
                 protocol_name,
-                contract_type,
-                verified
+                contract_type
             FROM contract_metadata
             WHERE contract_address = ?
-            ORDER BY verified DESC, updated_at DESC
+            ORDER BY updated_at DESC
             LIMIT 1
             "#,
         )
@@ -522,10 +520,7 @@ fn entity_identity(address: &str, row: EntityIdentityRow) -> WalletIdentity {
 }
 
 fn contract_identity(address: &str, row: ContractIdentityRow) -> WalletIdentity {
-    let mut tags = vec!["contract".to_string()];
-    if row.verified == 1 {
-        tags.push("verified_contract".to_string());
-    }
+    let tags = vec!["contract".to_string()];
 
     let entity_name = if row.protocol_name.is_empty() {
         None
@@ -541,7 +536,7 @@ fn contract_identity(address: &str, row: ContractIdentityRow) -> WalletIdentity 
         entity_type: Some(row.contract_type),
         exchange_name: None,
         exchange_role: None,
-        confidence: if row.verified == 1 { 0.9 } else { 0.65 },
+        confidence: 0.65,
         source: "contract_metadata".to_string(),
         tags,
     }
@@ -1050,7 +1045,7 @@ fn evidence_confidence(flows: &WalletFlowSummary, behavior: &WalletBehaviorSumma
         0.0
     };
 
-    clamp01(f64::from(volume_confidence) + age_bonus)
+    clamp01(volume_confidence + age_bonus)
 }
 
 fn empty_fingerprint(

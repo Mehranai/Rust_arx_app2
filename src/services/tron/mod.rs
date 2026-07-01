@@ -12,4 +12,5 @@ pub mod risk_engine;
 pub mod transaction_type;
 pub mod tron_classifier;
 pub mod tron_metadata_worker;
+pub mod wallet_aml_risk;
 pub mod wallet_fingerprint;

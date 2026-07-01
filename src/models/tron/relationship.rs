@@ -13,6 +13,8 @@ pub struct AddressRelationshipRow {
     pub timestamp: u64,
     pub amount: u128,
     pub transfer_type: String,
+    pub event_type: String,
     pub protocol: String,
     pub risk_score: u8,
+    pub hop_count: u16,
 }

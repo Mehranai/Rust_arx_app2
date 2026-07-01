@@ -125,26 +125,6 @@ async fn detect_wallet_type(
     detected_wallet_type: String,
 ) -> Result<String> {
     //
-    // known exchange tag
-    //
-    let known_exchange: u64 = clickhouse
-        .query(
-            "
-            SELECT count()
-            FROM address_tags
-            WHERE address = ?
-              AND tag = 'EXCHANGE'
-            ",
-        )
-        .bind(address)
-        .fetch_one::<u64>()
-        .await?;
-
-    if known_exchange > 0 {
-        return Ok("exchange".into());
-    }
-
-    //
     // high activity heuristic
     //
     if nonce > 10_000 {

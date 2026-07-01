@@ -40,17 +40,7 @@ CREATE TABLE IF NOT EXISTS eth_db.owner_info (
 ORDER BY address;
 
 ---------------------------------------------------------
--- ADDRESS TAGS
----------------------------------------------------------
-CREATE TABLE IF NOT EXISTS eth_db.address_tags (
-    address String,
-    tag String,
-    created_at DateTime DEFAULT now()
-) ENGINE = MergeTree()
-ORDER BY (address, tag);
-
----------------------------------------------------------
--- TOKEN TRANSFERS (CANONICAL TABLE)
+-- TOKEN TRANSFERS
 ---------------------------------------------------------
 CREATE TABLE IF NOT EXISTS eth_db.token_transfers (
     tx_hash String,
@@ -65,80 +55,8 @@ CREATE TABLE IF NOT EXISTS eth_db.token_transfers (
 ORDER BY (tx_hash, log_index);
 
 ---------------------------------------------------------
--- TOKEN DELTA (CANONICAL TABLE)
+-- TOKEN METADATA
 ---------------------------------------------------------
-CREATE TABLE IF NOT EXISTS eth_db.address_token_delta (
-    tx_hash String,
-    log_index UInt32,
-    direction UInt8,     -- صفر یعنی خروج. یک یعنی ورود به حساب
-    address String,
-    token_address String,
-    delta Int256,
-    block_number UInt64,
-    inserted_at DateTime DEFAULT now()
-) ENGINE = ReplacingMergeTree(inserted_at)
-ORDER BY (tx_hash, log_index, direction);
-
----------------------------------------------------------
--- MV: DELTA FROM (SENDER)
----------------------------------------------------------
-CREATE MATERIALIZED VIEW IF NOT EXISTS eth_db.mv_token_delta_from
-TO eth_db.address_token_delta
-AS
-SELECT
-    tx_hash,
-    log_index,
-    0 AS direction,
-    from_addr AS address,
-    token_address,
-    -toInt256(amount) AS delta,
-    block_number
-FROM eth_db.token_transfers
-WHERE from_addr != '0x0000000000000000000000000000000000000000';
-
----------------------------------------------------------
--- MV: DELTA TO (RECEIVER)
----------------------------------------------------------
-CREATE MATERIALIZED VIEW IF NOT EXISTS eth_db.mv_token_delta_to
-TO eth_db.address_token_delta
-AS
-SELECT
-    tx_hash,
-    log_index,
-    1 AS direction,
-    to_addr AS address,
-    token_address,
-    toInt256(amount) AS delta,
-    block_number
-FROM eth_db.token_transfers
-WHERE to_addr != '0x0000000000000000000000000000000000000000';
-
----------------------------------------------------------
--- FINAL TOKEN BALANCE TABLE
----------------------------------------------------------
-CREATE TABLE IF NOT EXISTS eth_db.address_token_balance (
-    address String,
-    token_address String,
-    balance Int256
-) ENGINE = SummingMergeTree()
-ORDER BY (address, token_address);
-
----------------------------------------------------------
--- MV: FINAL BALANCE
----------------------------------------------------------
-CREATE MATERIALIZED VIEW IF NOT EXISTS eth_db.mv_token_balance
-TO eth_db.address_token_balance
-AS
-SELECT
-    address,
-    token_address,
-    delta AS balance
-FROM eth_db.address_token_delta;
-
----------------------------------------------------------
--- TOKEN META DETAILS (Importent)
----------------------------------------------------------
-
 CREATE TABLE IF NOT EXISTS eth_db.token_metadata (
     token_address String,
     name String,

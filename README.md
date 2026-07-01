@@ -87,12 +87,34 @@ The response includes:
 - `receivers`: direct wallets that received funds from the target wallet, with the same fingerprint details.
 - `risk_flags`: compact AML flags for high risk transactions, exchange-heavy flow, burst activity, concentration, fan-in/fan-out patterns, swap-heavy activity, and bridge-heavy activity.
 
-Schema hooks are also created in ClickHouse:
-
-- `wallet_fingerprints` stores wallet-level snapshots for search and dashboards.
-- `wallet_counterparty_fingerprints` stores sender/receiver relationship snapshots for fast investigation views.
-
 One Example to see output of fingerprint:
 ```bash
 curl "http://127.0.0.1:4000/api/tron/wallet/THMMcdQ2badbBzmnzYGYCaFq9qpyiCh1rn/fingerprint?window_days=90&top_counterparties=25&max_events=20000" | ConvertFrom-Json | ConvertTo-Json -Depth 10 
+```
+
+## TRON wallet AML risk API
+
+The AML risk endpoint builds on the wallet fingerprint and returns a first-pass
+rules-based assessment. It scores transaction risk, behavioral patterns,
+typology matches, direct counterparty exposure, and identity context, then
+returns a `risk_percent`, `risk_level`, confidence, risk factors, protective
+factors, and the evidence used by the assessment.
+
+Query a wallet AML risk assessment:
+
+```bash
+curl "http://127.0.0.1:3000/api/tron/wallet/<TRON_WALLET_ADDRESS>/aml-risk?window_days=90&top_counterparties=25&max_events=20000"
+```
+
+The current model version is `wallet_aml_risk_v1_rules`. It is intentionally
+deterministic so analysts can inspect the evidence before we add AI inference on
+top of it.
+
+## TRON wallet investigation API
+
+The unified investigation endpoint returns the graph, behavioral fingerprint,
+AML risk assessment, and data-quality warnings in one response.
+
+```bash
+curl "http://127.0.0.1:3000/api/tron/wallet/<TRON_WALLET_ADDRESS>/investigation?depth=3&limit=500&window_days=90&top_counterparties=25&max_events=20000"
 ```

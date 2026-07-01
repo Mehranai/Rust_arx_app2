@@ -384,7 +384,7 @@
 
     .aside {
       display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto auto minmax(0, 1fr);
       gap: 12px;
       min-height: 0;
     }
@@ -458,6 +458,35 @@
     .badge.risk {
       background: #ffe9eb;
       color: var(--red);
+    }
+
+    .badge.ok {
+      background: #edf7ef;
+      color: var(--green);
+    }
+
+    .list {
+      display: grid;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .list-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfb;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .list-item strong {
+      color: var(--ink);
+      font-size: 12px;
+      text-align: right;
     }
 
     .table-wrap {
@@ -623,7 +652,7 @@
             <div class="metric"><span>Nodes</span><strong id="metricNodes">0</strong></div>
             <div class="metric"><span>Edges</span><strong id="metricEdges">0</strong></div>
             <div class="metric"><span>Exchanges</span><strong id="metricExchanges">0</strong></div>
-            <div class="metric"><span>High risk</span><strong id="metricRisk">0</strong></div>
+            <div class="metric"><span>AML risk</span><strong id="metricRisk">0%</strong></div>
             <div class="metric"><span>Neo4j edges</span><strong id="metricNeo4j">0</strong></div>
           </section>
 
@@ -657,6 +686,50 @@
         </div>
 
         <aside class="aside">
+          <section class="panel">
+            <div class="panel-head">
+              <strong>AML Risk</strong>
+              <span class="badge" id="riskBadge">Not scored</span>
+            </div>
+            <div class="panel-body">
+              <div class="kv">
+                <div class="kv-row"><span>Likelihood</span><strong id="riskPercent">-</strong></div>
+                <div class="kv-row"><span>Confidence</span><strong id="riskConfidence">-</strong></div>
+                <div class="kv-row"><span>Model</span><strong id="riskModel">-</strong></div>
+              </div>
+              <div class="list" id="riskTypologies"></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <strong>Fingerprint</strong>
+              <span class="badge" id="fingerprintBadge">None</span>
+            </div>
+            <div class="panel-body">
+              <div class="kv">
+                <div class="kv-row"><span>Identity</span><strong id="walletIdentity">-</strong></div>
+                <div class="kv-row"><span>Behavior</span><strong id="walletBehavior">-</strong></div>
+                <div class="kv-row"><span>Transfers</span><strong id="walletTransfers">-</strong></div>
+                <div class="kv-row"><span>Swap / Bridge</span><strong id="walletDefi">-</strong></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <strong>Data Quality</strong>
+              <span class="badge" id="qualityBadge">No data</span>
+            </div>
+            <div class="panel-body">
+              <div class="kv">
+                <div class="kv-row"><span>Observed</span><strong id="qualityObserved">-</strong></div>
+                <div class="kv-row"><span>Sample</span><strong id="qualitySample">-</strong></div>
+              </div>
+              <div class="list" id="qualityWarnings"></div>
+            </div>
+          </section>
+
           <section class="panel">
             <div class="panel-head">
               <strong>Selected Node</strong>
@@ -717,7 +790,11 @@
 
   <script>
     const state = {
+      investigation: null,
       graph: null,
+      fingerprint: null,
+      amlRisk: null,
+      dataQuality: null,
       selectedNodeId: null,
       filter: {
         operation: 'all',
@@ -746,7 +823,7 @@
 
     els.form.addEventListener('submit', (event) => {
       event.preventDefault();
-      loadGraph();
+      loadInvestigation();
     });
 
     els.operationFilter.addEventListener('change', () => {
@@ -771,7 +848,7 @@
       }
     });
 
-    async function loadGraph() {
+    async function loadInvestigation() {
       const address = els.wallet.value.trim();
       const depth = Number(els.depth.value);
       const limit = Number(els.limit.value);
@@ -784,7 +861,14 @@
       setLoading(true);
 
       try {
-        const response = await fetch(`/api/tron/wallet/${encodeURIComponent(address)}/graph?depth=${depth}&limit=${limit}`, {
+        const query = new URLSearchParams({
+          depth: String(depth),
+          limit: String(limit),
+          window_days: '90',
+          top_counterparties: '25',
+          max_events: '20000'
+        });
+        const response = await fetch(`/api/tron/wallet/${encodeURIComponent(address)}/investigation?${query.toString()}`, {
           headers: { accept: 'application/json' }
         });
 
@@ -793,14 +877,18 @@
           throw new Error(message || `Request failed with ${response.status}`);
         }
 
-        state.graph = await response.json();
+        state.investigation = await response.json();
+        state.graph = state.investigation.graph;
+        state.fingerprint = state.investigation.fingerprint;
+        state.amlRisk = state.investigation.aml_risk;
+        state.dataQuality = state.investigation.data_quality;
         state.selectedNodeId = state.graph.address;
         els.activeAddress.textContent = state.graph.address;
         hydrateOperationFilter();
         renderAll();
-        showToast('Graph loaded and Neo4j import completed.');
+        showToast('Investigation loaded.');
       } catch (error) {
-        showToast(error.message || 'Failed to load graph.');
+        showToast(error.message || 'Failed to load investigation.');
       } finally {
         setLoading(false);
       }
@@ -821,6 +909,9 @@
 
     function renderAll() {
       renderMetrics();
+      renderRisk();
+      renderFingerprint();
+      renderDataQuality();
       renderGraph();
       renderExchangeTable();
       renderNodeDetails();
@@ -882,8 +973,96 @@
       document.getElementById('metricNodes').textContent = String(nodes.length);
       document.getElementById('metricEdges').textContent = String(edges.length);
       document.getElementById('metricExchanges').textContent = String(exchangeNames.size);
-      document.getElementById('metricRisk').textContent = String(edges.filter((edge) => Number(edge.risk_score || 0) >= 70).length);
+      document.getElementById('metricRisk').textContent = state.amlRisk ? `${state.amlRisk.risk_percent}%` : '0%';
       document.getElementById('metricNeo4j').textContent = String(graph?.neo4j?.imported_transfer_edges || 0);
+    }
+
+    function renderRisk() {
+      const risk = state.amlRisk;
+      const badge = document.getElementById('riskBadge');
+      const typologies = document.getElementById('riskTypologies');
+
+      if (!risk) {
+        badge.textContent = 'Not scored';
+        badge.className = 'badge';
+        document.getElementById('riskPercent').textContent = '-';
+        document.getElementById('riskConfidence').textContent = '-';
+        document.getElementById('riskModel').textContent = '-';
+        typologies.innerHTML = '';
+        return;
+      }
+
+      badge.textContent = risk.risk_level || 'UNKNOWN';
+      badge.className = `badge ${riskBadgeClass(risk.risk_level)}`;
+      document.getElementById('riskPercent').textContent = `${risk.risk_percent}%`;
+      document.getElementById('riskConfidence').textContent = `${Math.round(Number(risk.confidence || 0) * 100)}%`;
+      document.getElementById('riskModel').textContent = risk.source?.model_version || '-';
+
+      const rows = (risk.typologies || []).slice(0, 4);
+      const fallback = (risk.risk_factors || []).slice(0, 4).map((factor) => ({
+        typology: factor,
+        confidence: null,
+        severity: 'factor'
+      }));
+      const items = rows.length ? rows : fallback;
+
+      typologies.innerHTML = items.length
+        ? items.map((item) => `
+          <div class="list-item">
+            <span>${escapeHtml(titleCase(item.typology || '-'))}</span>
+            <strong>${item.confidence == null ? escapeHtml(titleCase(item.severity || '')) : Math.round(Number(item.confidence) * 100) + '%'}</strong>
+          </div>
+        `).join('')
+        : '<div class="list-item"><span>No typology match</span><strong>-</strong></div>';
+    }
+
+    function renderFingerprint() {
+      const fingerprint = state.fingerprint;
+      const badge = document.getElementById('fingerprintBadge');
+
+      if (!fingerprint) {
+        badge.textContent = 'None';
+        badge.className = 'badge';
+        document.getElementById('walletIdentity').textContent = '-';
+        document.getElementById('walletBehavior').textContent = '-';
+        document.getElementById('walletTransfers').textContent = '-';
+        document.getElementById('walletDefi').textContent = '-';
+        return;
+      }
+
+      badge.textContent = `${Math.round(Number(fingerprint.confidence || 0) * 100)}%`;
+      badge.className = 'badge ok';
+      document.getElementById('walletIdentity').textContent = titleCase(fingerprint.identity?.identity_type || '-');
+      document.getElementById('walletBehavior').textContent = fingerprint.fingerprint_label || titleCase(fingerprint.wallet_type || '-');
+      document.getElementById('walletTransfers').textContent = `${fingerprint.flows?.total_transfers || 0} / ${fingerprint.flows?.unique_transactions || 0} tx`;
+      document.getElementById('walletDefi').textContent = `${percent(fingerprint.behavior?.swap_ratio)} / ${percent(fingerprint.behavior?.bridge_ratio)}`;
+    }
+
+    function renderDataQuality() {
+      const quality = state.dataQuality;
+      const badge = document.getElementById('qualityBadge');
+      const warnings = document.getElementById('qualityWarnings');
+
+      if (!quality) {
+        badge.textContent = 'No data';
+        badge.className = 'badge';
+        document.getElementById('qualityObserved').textContent = '-';
+        document.getElementById('qualitySample').textContent = '-';
+        warnings.innerHTML = '';
+        return;
+      }
+
+      const warningCount = (quality.warnings || []).length;
+      badge.textContent = warningCount ? `${warningCount} warning${warningCount === 1 ? '' : 's'}` : 'Clean';
+      badge.className = `badge ${warningCount ? 'warn' : 'ok'}`;
+      document.getElementById('qualityObserved').textContent = `${quality.observed_transfers || 0} transfers`;
+      document.getElementById('qualitySample').textContent = quality.fingerprint_is_truncated
+        ? `${quality.fingerprint_event_limit} capped`
+        : `${quality.fingerprint_event_limit} limit`;
+
+      warnings.innerHTML = warningCount
+        ? quality.warnings.map((warning) => `<div class="list-item"><span>${escapeHtml(titleCase(warning))}</span><strong>check</strong></div>`).join('')
+        : '<div class="list-item"><span>No sampling warnings</span><strong>ok</strong></div>';
     }
 
     function renderGraph() {
@@ -1147,6 +1326,24 @@
       }
 
       return `${node.exchange_name}${node.exchange_role ? ' / ' + node.exchange_role : ''}`;
+    }
+
+    function riskBadgeClass(level) {
+      switch ((level || '').toUpperCase()) {
+        case 'LOW':
+          return 'ok';
+        case 'MEDIUM':
+          return 'warn';
+        case 'HIGH':
+        case 'CRITICAL':
+          return 'risk';
+        default:
+          return '';
+      }
+    }
+
+    function percent(value) {
+      return `${Math.round(Number(value || 0) * 100)}%`;
     }
 
     function shortAddress(value) {

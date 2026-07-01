@@ -27,14 +27,6 @@ CREATE TABLE IF NOT EXISTS bsc_db.owner_info (
 ) ENGINE = ReplacingMergeTree()
 ORDER BY address;
 
-CREATE TABLE IF NOT EXISTS bsc_db.address_tags (
-    address String,
-    tag String,
-    created_at DateTime DEFAULT now()
-) ENGINE = MergeTree()
-ORDER BY (address, tag);
-
-
 /*
 New sections
 */

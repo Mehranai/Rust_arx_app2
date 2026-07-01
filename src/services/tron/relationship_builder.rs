@@ -41,8 +41,10 @@ pub fn build_relationships(
             timestamp,
             amount: transfer.amount,
             transfer_type: transfer_type.to_string(),
+            event_type: "transfer".to_string(),
             protocol: protocol.to_string(),
             risk_score,
+            hop_count: 1,
         });
     }
     //
@@ -70,8 +72,10 @@ pub fn build_relationships(
                     timestamp,
                     amount: 0,
                     transfer_type: RelationshipType::Swap.to_string(),
+                    event_type: "swap".to_string(),
                     protocol: protocol.to_string(),
                     risk_score,
+                    hop_count: 1,
                 });
             }
             //
@@ -95,8 +99,10 @@ pub fn build_relationships(
                     timestamp,
                     amount: 0,
                     transfer_type: RelationshipType::Bridge.to_string(),
+                    event_type: "bridge_in".to_string(),
                     protocol: protocol.to_string(),
                     risk_score,
+                    hop_count: 1,
                 });
             }
 
@@ -127,9 +133,13 @@ pub fn build_relationships(
 
                     transfer_type: RelationshipType::Bridge.to_string(),
 
+                    event_type: "bridge_out".to_string(),
+
                     protocol: protocol.to_string(),
 
                     risk_score,
+
+                    hop_count: 1,
                 });
             }
             AmlEvent::LiquidityAdd {
@@ -154,8 +164,10 @@ pub fn build_relationships(
                     timestamp,
                     amount: 0,
                     transfer_type: RelationshipType::LiquidityAdd.to_string(),
+                    event_type: "liquidity_add".to_string(),
                     protocol: protocol.to_string(),
                     risk_score,
+                    hop_count: 1,
                 });
             }
             AmlEvent::LiquidityRemove {
@@ -180,8 +192,10 @@ pub fn build_relationships(
                     timestamp,
                     amount: 0,
                     transfer_type: RelationshipType::LiquidityRemove.to_string(),
+                    event_type: "liquidity_remove".to_string(),
                     protocol: protocol.to_string(),
                     risk_score,
+                    hop_count: 1,
                 });
             }
             AmlEvent::Mint { user, token } => {
@@ -195,8 +209,10 @@ pub fn build_relationships(
                     timestamp,
                     amount: 0,
                     transfer_type: RelationshipType::Mint.to_string(),
+                    event_type: "mint".to_string(),
                     protocol: protocol.to_string(),
                     risk_score,
+                    hop_count: 1,
                 });
             }
             AmlEvent::Burn { user, token } => {
@@ -210,8 +226,10 @@ pub fn build_relationships(
                     timestamp,
                     amount: 0,
                     transfer_type: RelationshipType::Burn.to_string(),
+                    event_type: "burn".to_string(),
                     protocol: protocol.to_string(),
                     risk_score,
+                    hop_count: 1,
                 });
             }
         }

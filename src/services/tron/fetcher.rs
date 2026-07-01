@@ -306,17 +306,11 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
 
                 token_address: token.clone(),
 
-                token_symbol: String::new(),
-
-                decimals: 0,
-
                 from_address: from_addr.clone(),
 
                 to_address: to_addr.clone(),
 
                 amount,
-
-                amount_decimal: 0.0,
 
                 is_mint: (from_addr == ZERO_ADDRESS) as u8,
 
@@ -378,6 +372,8 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
         let row = ContractMetadataRow {
             contract_address: contract_address.clone(),
 
+            protocol_name: classification.protocol.clone(),
+
             contract_type: classification.category.to_string(),
 
             creator_address: from.clone(),
@@ -405,6 +401,18 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
         let unique_tokens = semantic_transfers
             .iter()
             .map(|t| t.token.clone())
+            .collect::<HashSet<_>>()
+            .len() as u16;
+        let fan_in = semantic_transfers
+            .iter()
+            .map(|t| t.from.clone())
+            .filter(|address| address != ZERO_ADDRESS)
+            .collect::<HashSet<_>>()
+            .len() as u16;
+        let fan_out = semantic_transfers
+            .iter()
+            .map(|t| t.to.clone())
+            .filter(|address| address != ZERO_ADDRESS)
             .collect::<HashSet<_>>()
             .len() as u16;
 
@@ -566,8 +574,8 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
             unique_tokens,
             participants,
             hop_count: semantic_transfers.len() as u16,
-            fan_in: participants,
-            fan_out: participants,
+            fan_in,
+            fan_out,
         };
 
         loader.transaction_feature_batcher.push(feature).await?;
@@ -589,9 +597,6 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
                 "transaction_type:{}:{}",
                 semantics.transaction_type, semantics.transaction_subtype
             )],
-            exposure_depth: 0,
-            touches_sanctioned: 0,
-            touches_mixer: 0,
             touches_exchange: (!exchange_flows.is_empty()) as u8,
         };
 
@@ -642,8 +647,8 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
                 unique_tokens: 0,
                 participants,
                 hop_count: 0,
-                fan_in: 0,
-                fan_out: 0,
+                fan_in: (!from.is_empty()) as u16,
+                fan_out: (!to.is_empty()) as u16,
             })
             .await?;
 
@@ -666,9 +671,6 @@ async fn process_tx(loader: Arc<LoaderTron>, tx: Value, block_number: u64) -> Re
                     "transaction_type:{}:{}",
                     semantics.transaction_type, semantics.transaction_subtype
                 )],
-                exposure_depth: 0,
-                touches_sanctioned: 0,
-                touches_mixer: 0,
                 touches_exchange: 0,
             })
             .await?;
